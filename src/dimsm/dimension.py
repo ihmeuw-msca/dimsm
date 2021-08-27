@@ -4,9 +4,9 @@ Dimension
 
 Record the name and grid information of the dimension.
 """
+from dataclasses import dataclass
 from operator import attrgetter
 from typing import List
-from dataclasses import dataclass
 
 import numpy as np
 
