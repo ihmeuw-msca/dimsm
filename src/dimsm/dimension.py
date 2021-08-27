@@ -28,6 +28,8 @@ class Dimension:
         Name of the dimension.
     grid : List[float]
         Grid of the dimension.
+    size : int
+        Size of the dimension grid.
 
     Raises
     ------
@@ -58,3 +60,13 @@ class Dimension:
                              "least two unique points. Otherwise dimension is "
                              "degenerate.")
         self._grid = grid
+
+    @property
+    def size(self) -> int:
+        """Size of the dimension grid."""
+        return self.grid.size
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}(name={self.name}, "
+                f"grid_bounds=[{self.grid.min():.2f}, {self.grid.max():.2f}], "
+                f"size={self.size})")
