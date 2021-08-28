@@ -4,7 +4,6 @@ Process
 
 Process class that contains the process matrix and its (co)variance matrix.
 """
-from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
 from typing import Callable, Optional
@@ -51,13 +50,12 @@ def default_gen_vmat(dt: float, size: int, sigma: float = 1.0) -> np.ndarray:
         Process (co)variance matrix.
     """
     mat = np.zeros((size, size))
-    vec = np.array([dt**i/i for i in range(1, 2*size)])
+    vec = np.flip(np.array([dt**i/i for i in range(1, 2*size)]))
     for i in range(size):
         mat[i] = vec[i:i + size]
     return sigma*mat
 
 
-@dataclass
 class Process:
     """Process class that contains the process matrix and its (co)variance
     matrix.
@@ -108,10 +106,15 @@ class Process:
     gen_mat = property(attrgetter("_gen_mat"))
     gen_vmat = property(attrgetter("_gen_vmat"))
 
-    name: str
-    order: int
-    gen_mat: Optional[Callable] = None
-    gen_vmat: Optional[Callable] = None
+    def __init__(self,
+                 name: str,
+                 order: int,
+                 gen_mat: Optional[Callable] = None,
+                 gen_vmat: Optional[Callable] = None):
+        self.name = name
+        self.order = order
+        self.gen_mat = gen_mat
+        self.gen_vmat = gen_vmat
 
     @name.setter
     def name(self, name: str):
@@ -147,3 +150,6 @@ class Process:
                 raise TypeError(f"{type(self).__name__}.gen_vmat must be "
                                 "callable.")
         self._gen_vmat = gen_vmat
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(name={self.name}, order={self.order})"
