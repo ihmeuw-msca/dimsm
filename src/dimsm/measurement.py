@@ -85,8 +85,8 @@ class Measurement:
     @vmat.setter
     def vmat(self, vmat: Union[float, np.ndarray]):
         vmat = np.asarray(vmat).astype(float)
-        if np.isscalar(vmat):
-            vmat = np.np.repeat(vmat, self.size)
+        if vmat.ndim == 0:
+            vmat = np.repeat(vmat, self.size)
         if vmat.ndim == 1:
             vmat = np.diag(vmat)
         if vmat.ndim != 2:

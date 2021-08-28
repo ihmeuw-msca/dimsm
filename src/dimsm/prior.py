@@ -100,6 +100,7 @@ class GaussianPrior:
                  vmat: Union[float, np.ndarray] = np.inf,
                  mat: Optional[np.ndarray] = None,
                  size: Optional[int] = None):
+        self.size = 1
         self.mean = mean
         self.vmat = vmat
         self.mat = mat
@@ -120,8 +121,8 @@ class GaussianPrior:
     @vmat.setter
     def vmat(self, vmat: Union[float, np.ndarray]):
         vmat = np.asarray(vmat).astype(float)
-        if np.isscalar(vmat):
-            vmat = np.np.repeat(vmat, self.size)
+        if vmat.ndim == 0:
+            vmat = np.repeat(vmat, self.size)
         if vmat.ndim == 1:
             vmat = np.diag(vmat)
         if vmat.ndim != 2:
@@ -164,9 +165,10 @@ class GaussianPrior:
             raise TypeError(f"{type(self).__name__}.size must be an integer.")
         if size <= 0:
             raise ValueError(f"{type(self).__name__}.size must be positive.")
-        self.size = size
-        self.mean = extend_info(self.mean)
-        self.vmat = extend_info(self.vmat)
+        if size != self.size:
+            self.size = size
+            self.mean = extend_info(self.mean, self.size)
+            self.vmat = extend_info(self.vmat, self.size)
 
 
 class UniformPrior:
@@ -223,6 +225,7 @@ class UniformPrior:
                  ub: Union[float, np.ndarray] = np.inf,
                  mat: Optional[np.ndarray] = None,
                  size: Optional[int] = None):
+        self.size = 1
         self.lb = lb
         self.ub = ub
         self.mat = mat
@@ -234,7 +237,7 @@ class UniformPrior:
         if self.mat is not None:
             size = len(self.mat)
         if size is None:
-            size = max(map(len, [self.mean, self.vmat]))
+            size = max(map(len, [self.lb, self.ub]))
         self.update_size(size)
 
     @lb.setter
@@ -280,6 +283,7 @@ class UniformPrior:
         if size < 0:
             raise ValueError(f"{type(self).__name__}.size must be "
                              "non-negative.")
-        self.size = size
-        self.lb = extend_info(self.lb)
-        self.ub = extend_info(self.ub)
+        if size != self.size:
+            self.size = size
+            self.lb = extend_info(self.lb, self.size)
+            self.ub = extend_info(self.ub, self.size)
