@@ -23,13 +23,13 @@ def col_value():
 
 
 @pytest.fixture
-def varmat():
-    return np.identity(5)
+def vmat():
+    return np.identity(6)
 
 
 @pytest.fixture
-def measurement(data, col_value, varmat):
-    return Measurement(data, col_value, varmat)
+def measurement(data, col_value, vmat):
+    return Measurement(data, col_value, vmat)
 
 
 def test_size(measurement, data):
@@ -37,22 +37,22 @@ def test_size(measurement, data):
 
 
 @pytest.mark.parametrize("data", [np.ones((5, 3))])
-def test_data_error(data, col_value, varmat):
+def test_data_error(data, col_value, vmat):
     with pytest.raises(TypeError):
-        Measurement(data, col_value, varmat)
+        Measurement(data, col_value, vmat)
 
 
 @pytest.mark.parametrize("col_value", ["random"])
-def test_col_value_error(data, col_value, varmat):
+def test_col_value_error(data, col_value, vmat):
     with pytest.raises(ValueError):
-        Measurement(data, col_value, varmat)
+        Measurement(data, col_value, vmat)
 
 
-@pytest.mark.parametrize("varmat", [-1.0, 0.0,
-                                    np.ones(10), -np.ones(6),
-                                    np.ones((6, 3, 2)), np.ones((6, 3)),
-                                    np.random.randn(6, 6),
-                                    -np.diag(np.ones(6))])
-def test_varmat_error(data, col_value, varmat):
+@pytest.mark.parametrize("vmat", [-1.0, 0.0,
+                                  np.ones(10), -np.ones(6),
+                                  np.ones((6, 3, 2)), np.ones((6, 3)),
+                                  np.random.randn(6, 6),
+                                  -np.diag(np.ones(6))])
+def test_vmat_error(data, col_value, vmat):
     with pytest.raises(ValueError):
-        Measurement(data, col_value, varmat)
+        Measurement(data, col_value, vmat)
