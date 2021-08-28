@@ -62,8 +62,6 @@ class Process:
 
     Parameters
     ----------
-    name : str
-        Name of the corresponding dimension.
     order : int
         Order of smoothness. Must be a non-negative integer.
     gen_mat : Optional[Callable], optional
@@ -77,8 +75,6 @@ class Process:
 
     Attributes
     ----------
-    name : str
-        Name of the corresponding dimension.
     order : int
         Order of smoothness. Must be a non-negative integer.
     gen_mat : Callable
@@ -88,8 +84,6 @@ class Process:
 
     Raises
     ------
-    TypeError
-        Raised when input name is not a string.
     TypeError
         Raised when input order is not an integer.
     ValueError
@@ -101,26 +95,17 @@ class Process:
         `None`.
     """
 
-    name = property(attrgetter("_name"))
     order = property(attrgetter("_order"))
     gen_mat = property(attrgetter("_gen_mat"))
     gen_vmat = property(attrgetter("_gen_vmat"))
 
     def __init__(self,
-                 name: str,
                  order: int,
                  gen_mat: Optional[Callable] = None,
                  gen_vmat: Optional[Callable] = None):
-        self.name = name
         self.order = order
         self.gen_mat = gen_mat
         self.gen_vmat = gen_vmat
-
-    @name.setter
-    def name(self, name: str):
-        if not isinstance(name, str):
-            raise TypeError(f"{type(self).__name__}.name has to be a string.")
-        self._name = name
 
     @order.setter
     def order(self, order: int):
@@ -152,4 +137,4 @@ class Process:
         self._gen_vmat = gen_vmat
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(name={self.name}, order={self.order})"
+        return f"{type(self).__name__}(order={self.order})"
