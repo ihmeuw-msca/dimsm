@@ -76,14 +76,14 @@ class Measurement:
         self._data = data
 
     @col_value.setter
-    def col_value(self, col_value: str) -> None:
+    def col_value(self, col_value: str):
         if col_value not in self.data.columns:
             raise ValueError(f"{type(self).__name__}.col_value not in data "
                              "frame columns.")
         self._col_value = col_value
 
     @varmat.setter
-    def varmat(self, varmat: Union[float, np.ndarray]) -> None:
+    def varmat(self, varmat: Union[float, np.ndarray]):
         if np.isscalar(varmat):
             varmat = np.diag(np.repeat(varmat, self.data.shape[0]))
 
@@ -111,3 +111,6 @@ class Measurement:
     def size(self) -> int:
         """Size of the observations."""
         return self.data.shape[0]
+
+    def __repr__(self) -> int:
+        return f"{type(self).__name__}(size={self.size})"

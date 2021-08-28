@@ -47,13 +47,13 @@ class Dimension:
     grid: List[float]
 
     @name.setter
-    def name(self, name: str) -> None:
+    def name(self, name: str):
         if not isinstance(name, str):
             raise TypeError(f"{type(self).__name__}.name has to be a string.")
         self._name = name
 
     @grid.setter
-    def grid(self, grid: List[float]) -> None:
+    def grid(self, grid: List[float]):
         grid = np.unique(grid).astype(float)
         if grid.size <= 1:
             raise ValueError(f"{type(self).__name__}.grid needs to have at "
