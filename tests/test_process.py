@@ -7,11 +7,6 @@ from dimsm.process import default_gen_mat, default_gen_vmat, Process
 
 
 @pytest.fixture
-def name():
-    return "age"
-
-
-@pytest.fixture
 def order():
     return 1
 
