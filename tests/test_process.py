@@ -2,7 +2,6 @@
 Test process module
 """
 from functools import partial
-from numpy.core.fromnumeric import var
 import pytest
 import numpy as np
 from dimsm.process import default_gen_mat, default_gen_vmat, Process

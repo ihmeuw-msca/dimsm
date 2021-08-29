@@ -206,7 +206,7 @@ class Process:
         x = x.reshape(self.order + 1, *var_shape)
         x = x.transpose((dim_index + 1, 0, *[i + 1 for i in other_dim_indices]))
         x = x.reshape(var_shape[dim_index]*(self.order + 1),
-                      np.prod([var_shape[i] for i in other_dim_indices]))
+                      int(np.prod([var_shape[i] for i in other_dim_indices])))
         return x
 
     def objective(self,
