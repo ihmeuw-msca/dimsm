@@ -8,6 +8,17 @@ from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
 
 
+def ad_jacobian(fun, x, shape, eps=1e-10):
+    n = len(x)
+    c = x + 0j
+    g = np.zeros(shape)
+    for i in range(n):
+        c[i] += eps*1j
+        g[i] = fun(c).imag/eps
+        c[i] -= eps*1j
+    return g
+
+
 @pytest.fixture
 def dims():
     return [Dimension("age", [20, 40, 60, 80, 100]),
@@ -68,3 +79,17 @@ def test_update_mat(measurement, dims):
     measurement.update_mat(dims)
     assert measurement.mat.shape == (6, 20)
     assert np.allclose(np.sum(measurement.mat.toarray(), axis=1), 1.0)
+
+
+def test_objective(measurement, dims):
+    measurement.update_mat(dims)
+    x = np.zeros(20)
+    assert np.isclose(measurement.objective(x), 3.0)
+
+
+def test_gradient(measurement, dims):
+    measurement.update_mat(dims)
+    x = np.zeros(20)
+    my_gradient = measurement.gradient(x)
+    tr_gradient = ad_jacobian(measurement.objective, x, x.shape)
+    assert np.allclose(my_gradient, tr_gradient)

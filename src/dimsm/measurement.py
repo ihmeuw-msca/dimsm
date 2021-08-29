@@ -195,7 +195,7 @@ class Measurement:
             Gradient vector.
         """
         r = self.data[self.col_value].values - self.mat.dot(x.ravel())
-        return self.mat.T.dot(np.linalg.solve(self.vmat, r))
+        return -self.mat.T.dot(np.linalg.solve(self.vmat, r))
 
     def __repr__(self) -> int:
         return f"{type(self).__name__}(size={self.size})"
