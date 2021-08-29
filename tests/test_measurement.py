@@ -4,15 +4,21 @@ Test measurement module
 import numpy as np
 import pandas as pd
 import pytest
-
+from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
+
+
+@pytest.fixture
+def dims():
+    return [Dimension("age", [20, 40, 60, 80, 100]),
+            Dimension("year", [1990, 1995, 2000, 2005])]
 
 
 @pytest.fixture
 def data():
     return pd.DataFrame({
         "age": [25.0, 30.0, 35.0, 25.0, 30.0, 35.0],
-        "time": [1990, 1990, 1990, 1995, 1995, 1995],
+        "year": [1991, 1991, 1991, 1993, 1993, 1993],
         "value": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     })
 
@@ -56,3 +62,9 @@ def test_col_value_error(data, col_value, vmat):
 def test_vmat_error(data, col_value, vmat):
     with pytest.raises(ValueError):
         Measurement(data, col_value, vmat)
+
+
+def test_update_mat(measurement, dims):
+    measurement.update_mat(dims)
+    assert measurement.mat.shape == (6, 20)
+    assert np.allclose(np.sum(measurement.mat.toarray(), axis=1), 1.0)

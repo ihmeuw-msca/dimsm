@@ -7,7 +7,6 @@ optimization solver and user to extract the results.
 """
 from operator import attrgetter
 from typing import Dict, List, Optional
-from math import prod
 
 import numpy as np
 
@@ -56,8 +55,22 @@ class Smoother:
         Names of the dimensions.
     prc_names : List[str]
         Names of the processes.
-    var_names : List[str]
-        Names of the variables.
+    var_size : int
+        Size of the variable.
+    num_dims : int
+        Number of dimensions.
+    num_vars : int
+        Number of variables.
+    var_indices : Dict[str, List[int]]
+        Variable indices dictionary with `"state"` or process name as the key
+        and a list of integers (indices) as values.
+
+    Methods
+    -------
+    objective(x)
+        Objective function.
+    gradient(x)
+        Gradient function.
     """
 
     dims = property(attrgetter("_dims"))
@@ -85,6 +98,8 @@ class Smoother:
                             "of instances of Dimension.")
         self.dim_names = [dim.name for dim in dims]
         self.var_shape = tuple(dim.size for dim in dims)
+        self.var_size = np.prod(self.var_shape)
+        self.num_dims = len(dims)
         self._dims = list(dims)
 
     @meas.setter
@@ -96,12 +111,15 @@ class Smoother:
             if dim_name not in meas.data.columns:
                 raise ValueError(f"{type(self).__name__}.meas must contain "
                                  f"dimension label {dim_name} in the column.")
-        self._measurement = meas
+        meas.update_mat(self.dims)
+        self._meas = meas
 
     @prcs.setter
     def prcs(self, prcs: Optional[Dict[str, Process]]):
-        self.var_names = ["state"]
+        self.num_vars = 1
         self.prc_names = []
+        self.var_indices = {"state": [0]}
+        self._prcs = {}
         if prcs is not None:
             if not isinstance(prcs, Dict):
                 raise TypeError(f"{type(self).__name__}.prcs must be a "
@@ -114,55 +132,77 @@ class Smoother:
                     raise TypeError(f"{type(self).__name__}.prcs values must "
                                     "be instances of Process.")
                 self.prc_names.append(key)
+                self.num_vars += value.order
             self.prc_names.sort(key=lambda name: self.dim_names.index(name))
-            self.var_names += [f"{prc_name}[{i}]"
-                               for prc_name in self.prc_names
-                               for i in range(prcs[prc_name].order)]
+            counter = 1
+            for prc_name in self.prc_names:
+                self.var_indices[prc_name] = [0] + \
+                    list(range(counter, counter + prcs[prc_name].order))
+                counter += prcs[prc_name].order
             self._prcs = prcs
-        self._prcs = {}
 
     @gpriors.setter
-    def gpriors(self, gpriors: Optional[Dict[str, GaussianPrior]]):
+    def gpriors(self, gpriors: Optional[Dict[str, List[GaussianPrior]]]):
+        self._gpriors = {}
         if gpriors is not None:
             if not isinstance(gpriors, Dict):
                 raise TypeError(f"{type(self).__name__}.gpriors must be a "
                                 "dictionary.")
-            for key, value in gpriors.items():
-                if key not in self.var_names:
-                    raise ValueError(f"{key} not in "
-                                     f"{type(self).__name__}.var_names.")
-                if not isinstance(value, GaussianPrior):
-                    raise TypeError(f"{type(self).__name__}.gpriors values "
-                                    "must be instances of GaussianPrior.")
-                if value.mat is None:
-                    value.update_size(prod(self.var_shape))
-                else:
-                    if value.mat.shape[1] != prod(self.var_shape):
-                        raise ValueError(f"gprior for {key} not match variable "
-                                         "size.")
-        self._gpriors = {}
 
     @upriors.setter
-    def upriors(self, upriors: Optional[Dict[str, UniformPrior]]):
+    def upriors(self, upriors: Optional[Dict[str, List[UniformPrior]]]):
+        self._upriors = {}
         if upriors is not None:
             if not isinstance(upriors, Dict):
                 raise TypeError(f"{type(self).__name__}.gpriors must be a "
                                 "dictionary.")
-            for key, value in upriors.items():
-                if key not in self.var_names:
-                    raise KeyError(f"{key} not in "
-                                   f"{type(self).__name__}.var_names.")
-                if not isinstance(value, UniformPrior):
-                    raise TypeError(f"{type(self).__name__}.upriors values "
-                                    "must be instances of UniformPrior.")
-                if value.mat is None:
-                    value.update_size(prod(self.var_shape))
-                else:
-                    if value.mat.shape[1] != prod(self.var_shape):
-                        raise ValueError(f"uprior for {key} not match variable "
-                                         "size.")
-        self._upriors = {}
+
+    def objective(self, x: np.ndarray) -> float:
+        """Objective function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
+        params = x.reshape(self.num_vars, self.var_size)
+
+        # measurement
+        value = self.meas.objective(params[self.var_indices["state"]])
+
+        return value
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        np.ndarray
+            Gradient vector.
+        """
+        params = x.reshape(self.num_vars, self.var_size)
+        gvalue = np.zeros((self.num_vars, self.var_size))
+
+        # measurement
+        gvalue[self.var_indices["state"]] += self.meas.gradient(
+            params[self.var_indices["state"]]
+        )
+
+        return gvalue.ravel()
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}(dims={self.dims}, meas={self.meas}, "
-                f"prcs={self.prcs}")
+        return (f"{type(self).__name__}(\n"
+                f"    dim_names={self.dim_names},\n"
+                f"    meas={self.meas},\n"
+                f"    prcs={self.prcs}\n"
+                ")")

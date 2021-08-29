@@ -61,5 +61,9 @@ def test_smoother_prc_names(smoother):
     assert smoother.prc_names == ["age", "year"]
 
 
-def test_smoother_var_names(smoother):
-    assert smoother.var_names == ["state", "year[0]"]
+def test_smoother_num_vars(smoother):
+    assert smoother.num_vars == 2
+
+
+def test_smoother_num_dims(smoother):
+    assert smoother.num_dims == 2

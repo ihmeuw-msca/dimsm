@@ -4,11 +4,14 @@ Measurement
 
 Contains table of measurements and the (co)variance matrix.
 """
-from typing import Union
+from typing import List, Union
 from operator import attrgetter
+from itertools import product
 
 import numpy as np
 import pandas as pd
+from scipy.sparse import csr_matrix
+from dimsm.dimension import Dimension
 
 
 class Measurement:
@@ -36,6 +39,8 @@ class Measurement:
         Column name corresponding to the measurements. Default to be `"value"`.
     vmat : np.ndarray
         (Co)varianace matrix corresponding to the measurements.
+    mat : np.ndarray
+        Measurement matrix operating on state variable.
     size : int
         Size of the measurement which is the number of rows of `data`.
 
@@ -54,6 +59,15 @@ class Measurement:
         Raised when matrix input for `vmat` is not squared.
     ValueError
         Raised when `vmat` is not symmetric positive definite.
+
+    Methods
+    -------
+    update_mat(dims)
+        Update the observation linear mapping.
+    objective(x)
+        Objective function.
+    graident(x)
+        Gradient function.
     """
 
     data = property(attrgetter("_data"))
@@ -67,6 +81,7 @@ class Measurement:
         self.data = data
         self.col_value = col_value
         self.vmat = vmat
+        self.mat = None
 
     @data.setter
     def data(self, data: pd.DataFrame):
@@ -108,6 +123,79 @@ class Measurement:
     def size(self) -> int:
         """Size of the observations."""
         return self.data.shape[0]
+
+    def update_mat(self, dims: List[Dimension]):
+        """Update the observation linear mapping.
+
+        Parameters
+        ----------
+        dims : List[Dimension]
+            Dimensions specification.
+        """
+        var_shape = tuple(dim.size for dim in dims)
+        row_indices = []
+        col_indices = []
+        mat_weights = []
+
+        for i, obs in self.data.iterrows():
+            dim_indices = []
+            dim_weights = []
+            for dim in dims:
+                x = obs[dim.name]
+                j = dim.grid.searchsorted(x, side="right")
+                if j == 0:
+                    indices, weights = (0,), (1,)
+                elif j == dim.size:
+                    indices, weights = (dim.size - 1,), (1,)
+                else:
+                    p = (dim.grid[j] - x) / (dim.grid[j] - dim.grid[j - 1])
+                    indices, weights = (j - 1, j), (p, 1 - p)
+                dim_indices.append(indices)
+                dim_weights.append(weights)
+            indices = product(*dim_indices)
+            weights = product(*dim_weights)
+
+            add_col_indices = list(
+                map(lambda x: np.ravel_multi_index(x, var_shape), indices)
+            )
+            col_indices.extend(add_col_indices)
+            row_indices.extend([i]*len(add_col_indices))
+            mat_weights.extend(list(map(np.prod, weights)))
+
+        self.mat = csr_matrix((mat_weights, (row_indices, col_indices)),
+                              shape=(self.size, np.prod(var_shape)))
+
+    def objective(self, x: np.ndarray) -> float:
+        """Objective function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
+        r = self.data[self.col_value].values - self.mat.dot(x.ravel())
+        return 0.5*r.dot(np.linalg.solve(self.vmat, r))
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        np.ndarray
+            Gradient vector.
+        """
+        r = self.data[self.col_value].values - self.mat.dot(x.ravel())
+        return self.mat.T.dot(np.linalg.solve(self.vmat, r))
 
     def __repr__(self) -> int:
         return f"{type(self).__name__}(size={self.size})"
