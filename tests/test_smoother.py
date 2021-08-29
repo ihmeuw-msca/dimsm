@@ -1,6 +1,7 @@
 """
 Test smoother module
 """
+import numpy as np
 import pandas as pd
 import pytest
 from dimsm.dimension import Dimension
@@ -8,6 +9,17 @@ from dimsm.measurement import Measurement
 from dimsm.prior import GaussianPrior, UniformPrior
 from dimsm.process import Process
 from dimsm.smoother import Smoother
+
+
+def ad_jacobian(fun, x, shape, eps=1e-10):
+    n = len(x)
+    c = x + 0j
+    g = np.zeros(shape)
+    for i in range(n):
+        c[i] += eps*1j
+        g[i] = fun(c).imag/eps
+        c[i] -= eps*1j
+    return g
 
 
 @pytest.fixture
@@ -75,3 +87,10 @@ def test_smoother_var_indices(smoother):
     assert var_indices["state"] == [0]
     assert var_indices["age"] == [0]
     assert var_indices["year"] == [0, 1]
+
+
+def test_gradient(smoother):
+    x = np.zeros(smoother.num_vars*smoother.var_size)
+    my_gradient = smoother.gradient(x)
+    tr_gradient = ad_jacobian(smoother.objective, x, x.shape)
+    assert np.allclose(my_gradient, tr_gradient)
