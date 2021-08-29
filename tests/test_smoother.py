@@ -15,7 +15,7 @@ def ad_jacobian(fun, x, shape, eps=1e-10):
     n = len(x)
     c = x + 0j
     g = np.zeros(shape)
-    for i in range(n):
+    for i in np.ndindex(shape):
         c[i] += eps*1j
         g[i] = fun(c).imag/eps
         c[i] -= eps*1j
@@ -46,8 +46,8 @@ def prcs():
 
 @pytest.fixture
 def gpriors():
-    return {"state": GaussianPrior(mean=0.0, vmat=1.0),
-            "year[0]": GaussianPrior(mean=0.0, vmat=1.0)}
+    return {"state": GaussianPrior(mean=0.0, imat=1.0),
+            "year[0]": GaussianPrior(mean=0.0, imat=1.0)}
 
 
 @pytest.fixture
@@ -85,8 +85,8 @@ def test_smoother_var_indices(smoother):
     var_indices = smoother.var_indices
     assert all(name in var_indices for name in ["state", "age", "year"])
     assert var_indices["state"] == [0]
-    assert var_indices["age"] == [0]
-    assert var_indices["year"] == [0, 1]
+    assert var_indices["age"] == []
+    assert var_indices["year"] == [1]
 
 
 def test_gradient(smoother):

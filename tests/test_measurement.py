@@ -12,7 +12,7 @@ def ad_jacobian(fun, x, shape, eps=1e-10):
     n = len(x)
     c = x + 0j
     g = np.zeros(shape)
-    for i in range(n):
+    for i in np.ndindex(shape):
         c[i] += eps*1j
         g[i] = fun(c).imag/eps
         c[i] -= eps*1j

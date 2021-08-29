@@ -7,6 +7,7 @@ Prior class contains prior information for state and dimension variable.
 from operator import attrgetter
 from typing import Union, Optional
 import numpy as np
+from scipy.sparse import diags
 
 
 def extend_info(info: np.ndarray, size: int) -> np.ndarray:
@@ -33,13 +34,13 @@ def extend_info(info: np.ndarray, size: int) -> np.ndarray:
     """
     if not (info.ndim == 1 or info.ndim == 2):
         raise ValueError("Information array must be a vector or a matrix.")
-    if len(info) != 1:
-        if len(info) != size:
+    if info.shape[0] != 1:
+        if info.shape[0] != size:
             raise ValueError("Cannot extend info, size not matching.")
         return info
     if info.ndim == 1:
         return np.repeat(info, size)
-    return np.diag(np.repeat(info[0], size))
+    return diags(np.repeat(info.diagonal(), size))
 
 
 class GaussianPrior:
@@ -50,8 +51,8 @@ class GaussianPrior:
     ----------
     mean : Union[float, np.ndarray], optional
         Mean of the prior. Default to be 0.
-    vmat : Union[float, np.ndarray], optional
-        (Co)variance matrix of the prior. Default to be `np.inf`.
+    imat : Union[float, np.ndarray], optional
+        Inverse (co)variance matrix of the prior. Default to be `0.0`.
     mat : Optional[np.ndarray], optional
         Linear Mapping of the prior. Default to be `None`. When it is `None`,
         prior will be directly applied to the variable, equivalent with when
@@ -65,8 +66,8 @@ class GaussianPrior:
     ----------
     mean : np.ndarray
         Mean of the prior.
-    vmat : np.ndarray
-        (Co)variance matrix of the prior.
+    imat : np.ndarray
+        inverse (co)variance matrix of the prior.
     mat : Optional[np.ndarray]
         Linear Mapping of the prior. Default to be `None`. When it is `None`,
         prior will be directly applied to the variable, equivalent with when
@@ -77,11 +78,11 @@ class GaussianPrior:
     Raises
     ------
     ValueError
-        Raised when input for `vmat` is not a scalar, vector or a matrix.
+        Raised when input for `imat` is not a scalar, vector or a matrix.
     ValueError
-        Raised when matrix input for `vmat` is not squared.
+        Raised when matrix input for `imat` is not squared.
     ValueError
-        Raised when `vmat` is not symmetric positive definite.
+        Raised when input for `imat` matrix does not have positive diagonal.
     ValueError
         Raised when input for `mat` is not a matrix.
 
@@ -89,26 +90,29 @@ class GaussianPrior:
     -------
     update_size(size)
         Update the size of the prior.
+    objective(x)
+        Objective function.
+    graident(x)
+        Gradient function.
     """
 
     mean = property(attrgetter("_mean"))
-    vmat = property(attrgetter("_vmat"))
+    imat = property(attrgetter("_imat"))
     mat = property(attrgetter("_mat"))
 
     def __init__(self,
                  mean: Union[float, np.ndarray] = 0.0,
-                 vmat: Union[float, np.ndarray] = np.inf,
+                 imat: Union[float, np.ndarray] = 0.0,
                  mat: Optional[np.ndarray] = None,
                  size: Optional[int] = None):
         self.size = 1
         self.mean = mean
-        self.vmat = vmat
+        self.imat = imat
         self.mat = mat
 
-        if self.mat is not None:
-            size = len(self.mat)
         if size is None:
-            size = max(map(len, [self.mean, self.vmat]))
+            size = max(map(lambda x: x.shape[0],
+                           [self.mean, self.imat, self.mat]))
         self.update_size(size)
 
     @mean.setter
@@ -118,32 +122,31 @@ class GaussianPrior:
             mean = np.array([mean])
         self._mean = mean.ravel()
 
-    @vmat.setter
-    def vmat(self, vmat: Union[float, np.ndarray]):
-        vmat = np.asarray(vmat).astype(float)
-        if vmat.ndim == 0:
-            vmat = np.repeat(vmat, self.size)
-        if vmat.ndim == 1:
-            vmat = np.diag(vmat)
-        if vmat.ndim != 2:
-            raise ValueError(f"Input for {type(self).__name__}.vmat must "
+    @imat.setter
+    def imat(self, imat: Union[float, np.ndarray]):
+        if np.isscalar(imat):
+            imat = np.repeat(imat, self.size)
+        if imat.ndim == 1:
+            imat = diags(imat)
+        if imat.ndim != 2:
+            raise ValueError(f"Input for {type(self).__name__}.imat must "
                              "must be a scalar, vector or a matrix.")
-        if vmat.shape[0] != vmat.shape[1]:
-            raise ValueError(f"{type(self).__name__}.vmat must be a "
+        if imat.shape[0] != imat.shape[1]:
+            raise ValueError(f"{type(self).__name__}.imat must be a "
                              "squared matrix.")
-        if not (np.allclose(vmat, vmat.T) and
-                np.all(np.linalg.eigvals(vmat) > 0.0)):
-            raise ValueError(f"{type(self).__name__}.vmat must be a "
-                             "symmetric positive definite matrix.")
-        self._vmat = vmat
+        if not all(imat.diagonal() > 0):
+            raise ValueError(f"{type(self).__name__}.imat diagonal must be "
+                             "positive.")
+        self._imat = imat
 
     @mat.setter
     def mat(self, mat: Optional[np.ndarray]):
         if mat is not None:
-            mat = np.asarray(mat).astype(float)
             if mat.ndim != 2:
                 raise ValueError(f"Input for {type(self).__name__}.mat must be "
                                  "a matrix.")
+        else:
+            mat = diags(np.ones(self.size))
         self._mat = mat
 
     def update_size(self, size: int):
@@ -168,7 +171,40 @@ class GaussianPrior:
         if size != self.size:
             self.size = size
             self.mean = extend_info(self.mean, self.size)
-            self.vmat = extend_info(self.vmat, self.size)
+            self.imat = extend_info(self.imat, self.size)
+            self.mat = extend_info(self.mat, self.size)
+
+    def objective(self, x: np.ndarray) -> float:
+        """Objective function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
+        r = self.mean - self.mat.dot(x)
+        return 0.5*r.dot(self.imat.dot(r))
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+
+        Returns
+        -------
+        np.ndarray
+            Gradient vector.
+        """
+        r = self.mean - self.mat.dot(x)
+        return -self.mat.T.dot(self.imat.dot(r))
 
 
 class UniformPrior:
@@ -194,7 +230,7 @@ class UniformPrior:
     ----------
     mean : np.ndarray
         Mean of the prior.
-    vmat : np.ndarray
+    imat : np.ndarray
         (Co)variance matrix of the prior.
     mat : Optional[np.ndarray]
         Linear Mapping of the prior. Default to be `None`. When it is `None`,
@@ -234,10 +270,9 @@ class UniformPrior:
             raise ValueError(f"{type(self).__name__}.lb must less or equal "
                              f"than {type(self).__name__}.ub")
 
-        if self.mat is not None:
-            size = len(self.mat)
         if size is None:
-            size = max(map(len, [self.lb, self.ub]))
+            size = max(map(lambda x: x.shape[0],
+                           [self.lb, self.ub, self.mat]))
         self.update_size(size)
 
     @lb.setter
@@ -257,10 +292,11 @@ class UniformPrior:
     @mat.setter
     def mat(self, mat: Optional[np.ndarray]):
         if mat is not None:
-            mat = np.asarray(mat).astype(float)
             if mat.ndim != 2:
                 raise ValueError(f"Input for {type(self).__name__}.mat must be "
                                  "a matrix.")
+        else:
+            mat = diags(np.ones(self.size))
         self._mat = mat
 
     def update_size(self, size: int):
@@ -287,3 +323,4 @@ class UniformPrior:
             self.size = size
             self.lb = extend_info(self.lb, self.size)
             self.ub = extend_info(self.ub, self.size)
+            self.mat = extend_info(self.mat, self.size)

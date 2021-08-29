@@ -57,6 +57,8 @@ class Measurement:
         Raised when input for `imat` is not a scalar, vector or a matrix.
     ValueError
         Raised when matrix input for `imat` is not squared.
+    ValueError
+        Raised when input for `imat` matrix does not have positive diagonal.
 
     Methods
     -------

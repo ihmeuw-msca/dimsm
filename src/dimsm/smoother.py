@@ -137,8 +137,9 @@ class Smoother:
             self.prc_names.sort(key=lambda name: self.dim_names.index(name))
             counter = 1
             for prc_name in self.prc_names:
-                self.var_indices[prc_name] = [0] + \
-                    list(range(counter, counter + prcs[prc_name].order))
+                self.var_indices[prc_name] = list(
+                    range(counter, counter + prcs[prc_name].order)
+                )
                 counter += prcs[prc_name].order
             self._prcs = prcs
 
@@ -178,9 +179,17 @@ class Smoother:
 
         # process
         for name, prc in self.prcs.items():
-            value += prc.objective(params[self.var_indices[name]],
+            indices = [0] + self.var_indices[name]
+            value += prc.objective(params[indices],
                                    self.var_shape,
                                    self.dim_names.index(name))
+
+        # gprior
+        for name, gpriors in self.gpriors.items():
+            for i, gprior in enumerate(gpriors):
+                if gprior is not None:
+                    index = self.var_indices["name"][i]
+                    value += gprior.objective(params[index])
 
         return value
 
@@ -207,10 +216,17 @@ class Smoother:
 
         # process
         for name, prc in self.prcs.items():
-            indices = self.var_indices[name]
+            indices = [0] + self.var_indices[name]
             gvalue[indices] += prc.gradient(params[indices],
                                             self.var_shape,
                                             self.dim_names.index(name))
+
+        # gprior
+        for name, gpriors in self.gpriors.items():
+            for i, gprior in enumerate(gpriors):
+                if gprior is not None:
+                    index = self.var_indices["name"][i]
+                    gvalue[index] += gprior.gradient(params[index])
 
         return gvalue.ravel()
 
