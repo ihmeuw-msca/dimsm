@@ -67,3 +67,11 @@ def test_smoother_num_vars(smoother):
 
 def test_smoother_num_dims(smoother):
     assert smoother.num_dims == 2
+
+
+def test_smoother_var_indices(smoother):
+    var_indices = smoother.var_indices
+    assert all(name in var_indices for name in ["state", "age", "year"])
+    assert var_indices["state"] == [0]
+    assert var_indices["age"] == [0]
+    assert var_indices["year"] == [0, 1]
