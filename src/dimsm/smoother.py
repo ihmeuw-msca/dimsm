@@ -111,7 +111,7 @@ class Smoother:
             if dim_name not in meas.data.columns:
                 raise ValueError(f"{type(self).__name__}.meas must contain "
                                  f"dimension label {dim_name} in the column.")
-        meas.update_mat(self.dims)
+        meas.update_dim(self.dims)
         self._meas = meas
 
     @prcs.setter
@@ -131,6 +131,7 @@ class Smoother:
                 if not isinstance(value, Process):
                     raise TypeError(f"{type(self).__name__}.prcs values must "
                                     "be instances of Process.")
+                value.update_dim(self.dims[self.dim_names.index(key)])
                 self.prc_names.append(key)
                 self.num_vars += value.order
             self.prc_names.sort(key=lambda name: self.dim_names.index(name))

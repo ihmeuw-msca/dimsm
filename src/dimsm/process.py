@@ -6,9 +6,12 @@ Process class that contains the process matrix and its (co)variance matrix.
 """
 from functools import partial
 from operator import attrgetter
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import numpy as np
+from scipy.sparse import block_diag
+
+from dimsm.dimension import Dimension
 
 
 def default_gen_mat(dt: float, size: int) -> np.ndarray:
@@ -93,6 +96,17 @@ class Process:
     TypeError
         Raised when input process (co)variance generator is not callable or
         `None`.
+
+    Methods
+    -------
+    update_dim(dim)
+        Update process matrices and their (co)variance matrices.
+    reshape_var(x, var_shape, dim_index, reverse=False)
+        Reshape the variable array.
+    objective(x, var_shape, dim_index)
+        Objective function.
+    Gradient(x, var_shape, dim_index)
+        Gradient function.
     """
 
     order = property(attrgetter("_order"))
@@ -106,6 +120,9 @@ class Process:
         self.order = order
         self.gen_mat = gen_mat
         self.gen_vmat = gen_vmat
+
+        self.mat = None
+        self.imat = None
 
     @order.setter
     def order(self, order: int):
@@ -135,6 +152,119 @@ class Process:
                 raise TypeError(f"{type(self).__name__}.gen_vmat must be "
                                 "callable.")
         self._gen_vmat = gen_vmat
+
+    def update_dim(self, dim: Dimension):
+        """Update process matrices and their (co)variance matrices.
+
+        Parameters
+        ----------
+        dim : Dimension
+            The corresponding dimenion.
+        """
+        dts = np.diff(dim.grid)
+        self.mat = block_diag([self.gen_mat(dt) for dt in dts])
+        self.imat = block_diag([np.linalg.inv(self.gen_vmat(dt)) for dt in dts])
+
+    def reshape_var(self,
+                    x: np.ndarray,
+                    var_shape: Tuple[int],
+                    dim_index: int,
+                    reverse: bool = False) -> np.ndarray:
+        """Reshape the variable array.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+        var_shape : Tuple[int]
+            Variable shape corresponding to one layer.
+        dim_index : int
+            Corresponding dimension index.
+        reverse : bool, optional
+            If `True` reshape the variable back to origibnal shape, by default
+            `False`.
+
+        Returns
+        -------
+        np.ndarray
+            Reshaped variable array.
+        """
+        other_dim_indices = list(range(len(var_shape)))
+        other_dim_indices.remove(dim_index)
+
+        if reverse:
+            ordered_dim_indices = [i + 1 for i in other_dim_indices]
+            if dim_index > 0:
+                ordered_dim_indices = [i + 1 for i in ordered_dim_indices]
+            ordered_dim_indices.insert(dim_index, 0)
+            x = x.reshape(var_shape[dim_index],
+                          self.order + 1,
+                          *[var_shape[i] for i in other_dim_indices])
+            x = x.transpose(1, *ordered_dim_indices)
+            x = x.reshape(self.order + 1, np.prod(var_shape))
+            return x
+        x = x.reshape(self.order + 1, *var_shape)
+        x = x.transpose((dim_index + 1, 0, *[i + 1 for i in other_dim_indices]))
+        x = x.reshape(var_shape[dim_index]*(self.order + 1),
+                      np.prod([var_shape[i] for i in other_dim_indices]))
+        return x
+
+    def objective(self,
+                  x: np.ndarray,
+                  var_shape: Tuple[int],
+                  dim_index: int) -> float:
+        """Objective function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+        var_shape : Tuple[int]
+            Variable shape corresponding to one layer.
+        dim_index : int
+            Corresponding dimension index.
+
+        Returns
+        -------
+        float
+            Objective value.
+        """
+        s = self.order + 1
+        x = self.reshape_var(x, var_shape, dim_index)
+        r = x[s:] - self.mat.dot(x[:-s])
+        t = self.imat.dot(r)
+        return 0.5*np.sum(r*t)
+
+    def gradient(self,
+                 x: np.ndarray,
+                 var_shape: Tuple[int],
+                 dim_index: int) -> np.ndarray:
+        """Gradient function.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Variable array.
+        var_shape : Tuple[int]
+            Variable shape corresponding to one layer.
+        dim_index : int
+            Corresponding dimension index.
+
+        Returns
+        -------
+        np.ndarray
+            Gradient array.
+        """
+        s = self.order + 1
+        x = self.reshape_var(x, var_shape, dim_index)
+        r = x[s:] - self.mat.dot(x[:-s])
+        t = self.imat.dot(r)
+        g = np.zeros(x.shape)
+
+        g[s:] += t
+        g[:-s] -= self.mat.T.dot(t)
+
+        return self.reshape_var(g, var_shape, dim_index, reverse=True)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(order={self.order})"

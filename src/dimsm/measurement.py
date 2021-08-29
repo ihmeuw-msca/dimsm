@@ -10,7 +10,7 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, diags
 from dimsm.dimension import Dimension
 
 
@@ -24,10 +24,10 @@ class Measurement:
         Data frame that contains measurements and their dimension labels.
     col_value : str, optional
         Column name corresponding to the measurements. Default to be `"value"`.
-    vmat : Union[float, np.ndarray], optional
-        (Co)varianace matrix corresponding to the measurements. It can be a
-        scalar, vector, and a matrix. When it is a scalar, the matrix will be
-        constructed as a diagonal matrix with the scalar value. When it is a
+    imat : Union[float, np.ndarray], optional
+        Inverse (co)varianace matrix corresponding to the measurements. It can
+        be a scalar, vector, and a matrix. When it is a scalar, the matrix will
+        be constructed as a diagonal matrix with the scalar value. When it is a
         vector, the matrix will be constructed as a diagonal matrix with the
         vector as the diagonal. Default to be 1.
 
@@ -37,8 +37,8 @@ class Measurement:
         Data frame that contains measurements and their dimension labels.
     col_value : str, optional
         Column name corresponding to the measurements. Default to be `"value"`.
-    vmat : np.ndarray
-        (Co)varianace matrix corresponding to the measurements.
+    imat : np.ndarray
+        Inverse (co)varianace matrix corresponding to the measurements.
     mat : np.ndarray
         Measurement matrix operating on state variable.
     size : int
@@ -51,18 +51,16 @@ class Measurement:
     ValueError
         Raised when `col_value` not in `data` columns.
     ValueError
-        Raised when vector input for `vmat` not matching with number of rows
+        Raised when vector input for `imat` not matching with number of rows
         in `data`.
     ValueError
-        Raised when input for `vmat` is not a scalar, vector or a matrix.
+        Raised when input for `imat` is not a scalar, vector or a matrix.
     ValueError
-        Raised when matrix input for `vmat` is not squared.
-    ValueError
-        Raised when `vmat` is not symmetric positive definite.
+        Raised when matrix input for `imat` is not squared.
 
     Methods
     -------
-    update_mat(dims)
+    update_dim(dims)
         Update the observation linear mapping.
     objective(x)
         Objective function.
@@ -71,16 +69,16 @@ class Measurement:
     """
 
     data = property(attrgetter("_data"))
-    vmat = property(attrgetter("_vmat"))
+    imat = property(attrgetter("_imat"))
     col_value = property(attrgetter("_col_value"))
 
     def __init__(self,
                  data: pd.DataFrame,
                  col_value: str = "value",
-                 vmat: Union[float, np.ndarray] = 1.0):
+                 imat: Union[float, np.ndarray] = 1.0):
         self.data = data
         self.col_value = col_value
-        self.vmat = vmat
+        self.imat = imat
         self.mat = None
 
     @data.setter
@@ -97,34 +95,33 @@ class Measurement:
                              "frame columns.")
         self._col_value = col_value
 
-    @vmat.setter
-    def vmat(self, vmat: Union[float, np.ndarray]):
-        vmat = np.asarray(vmat).astype(float)
-        if vmat.ndim == 0:
-            vmat = np.repeat(vmat, self.size)
-        if vmat.ndim == 1:
-            vmat = np.diag(vmat)
-        if vmat.ndim != 2:
-            raise ValueError(f"Input for {type(self).__name__}.vmat must "
+    @imat.setter
+    def imat(self, imat: Union[float, np.ndarray]):
+        imat = np.asarray(imat).astype(float)
+        if imat.ndim == 0:
+            imat = np.repeat(imat, self.size)
+        if imat.ndim == 1:
+            imat = diags(imat)
+        if imat.ndim != 2:
+            raise ValueError(f"Input for {type(self).__name__}.imat must "
                              "must be a scalar, vector or a matrix.")
-        if vmat.shape[0] != vmat.shape[1]:
-            raise ValueError(f"{type(self).__name__}.vmat must be a "
+        if imat.shape[0] != imat.shape[1]:
+            raise ValueError(f"{type(self).__name__}.imat must be a "
                              "squared matrix.")
-        if vmat.shape[0] != self.size:
-            raise ValueError(f"{type(self).__name__}.vmat size does not "
+        if imat.shape[0] != self.size:
+            raise ValueError(f"{type(self).__name__}.imat size does not "
                              "match with the data frame.")
-        if not (np.allclose(vmat, vmat.T) and
-                np.all(np.linalg.eigvals(vmat) > 0.0)):
-            raise ValueError(f"{type(self).__name__}.vmat must be a "
-                             "symmetric positive definite matrix.")
-        self._vmat = vmat
+        if not all(imat.diagonal() > 0):
+            raise ValueError(f"{type(self).__name__}.imat diagonal must be "
+                             "positive.")
+        self._imat = imat
 
     @property
     def size(self) -> int:
         """Size of the observations."""
         return self.data.shape[0]
 
-    def update_mat(self, dims: List[Dimension]):
+    def update_dim(self, dims: List[Dimension]):
         """Update the observation linear mapping.
 
         Parameters
@@ -179,7 +176,7 @@ class Measurement:
             Objective value.
         """
         r = self.data[self.col_value].values - self.mat.dot(x.ravel())
-        return 0.5*r.dot(np.linalg.solve(self.vmat, r))
+        return 0.5*r.dot(self.imat.dot(r))
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         """Gradient function.
@@ -195,7 +192,7 @@ class Measurement:
             Gradient vector.
         """
         r = self.data[self.col_value].values - self.mat.dot(x.ravel())
-        return -self.mat.T.dot(np.linalg.solve(self.vmat, r))
+        return -self.mat.T.dot(self.imat.dot(r))
 
     def __repr__(self) -> int:
         return f"{type(self).__name__}(size={self.size})"

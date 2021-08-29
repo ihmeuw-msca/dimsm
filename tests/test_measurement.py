@@ -40,13 +40,13 @@ def col_value():
 
 
 @pytest.fixture
-def vmat():
+def imat():
     return np.identity(6)
 
 
 @pytest.fixture
-def measurement(data, col_value, vmat):
-    return Measurement(data, col_value, vmat)
+def measurement(data, col_value, imat):
+    return Measurement(data, col_value, imat)
 
 
 def test_size(measurement, data):
@@ -54,41 +54,41 @@ def test_size(measurement, data):
 
 
 @pytest.mark.parametrize("data", [np.ones((5, 3))])
-def test_data_error(data, col_value, vmat):
+def test_data_error(data, col_value, imat):
     with pytest.raises(TypeError):
-        Measurement(data, col_value, vmat)
+        Measurement(data, col_value, imat)
 
 
 @pytest.mark.parametrize("col_value", ["random"])
-def test_col_value_error(data, col_value, vmat):
+def test_col_value_error(data, col_value, imat):
     with pytest.raises(ValueError):
-        Measurement(data, col_value, vmat)
+        Measurement(data, col_value, imat)
 
 
-@pytest.mark.parametrize("vmat", [-1.0, 0.0,
+@pytest.mark.parametrize("imat", [-1.0, 0.0,
                                   np.ones(10), -np.ones(6),
                                   np.ones((6, 3, 2)), np.ones((6, 3)),
                                   np.random.randn(6, 6),
                                   -np.diag(np.ones(6))])
-def test_vmat_error(data, col_value, vmat):
+def test_imat_error(data, col_value, imat):
     with pytest.raises(ValueError):
-        Measurement(data, col_value, vmat)
+        Measurement(data, col_value, imat)
 
 
-def test_update_mat(measurement, dims):
-    measurement.update_mat(dims)
+def test_update_dim(measurement, dims):
+    measurement.update_dim(dims)
     assert measurement.mat.shape == (6, 20)
     assert np.allclose(np.sum(measurement.mat.toarray(), axis=1), 1.0)
 
 
 def test_objective(measurement, dims):
-    measurement.update_mat(dims)
+    measurement.update_dim(dims)
     x = np.zeros(20)
     assert np.isclose(measurement.objective(x), 3.0)
 
 
 def test_gradient(measurement, dims):
-    measurement.update_mat(dims)
+    measurement.update_dim(dims)
     x = np.zeros(20)
     my_gradient = measurement.gradient(x)
     tr_gradient = ad_jacobian(measurement.objective, x, x.shape)
