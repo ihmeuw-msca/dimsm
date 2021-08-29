@@ -46,14 +46,14 @@ def prcs():
 
 @pytest.fixture
 def gpriors():
-    return {"state": GaussianPrior(mean=0.0, imat=1.0),
-            "year[0]": GaussianPrior(mean=0.0, imat=1.0)}
+    return {"state": [GaussianPrior(mean=0.0, imat=1.0)],
+            "year": [GaussianPrior(mean=0.0, imat=1.0)]}
 
 
 @pytest.fixture
 def upriors():
-    return {"state": UniformPrior(lb=-1.0, ub=1.0),
-            "year[0]": UniformPrior(lb=-1.0, ub=1.0)}
+    return {"state": [UniformPrior(lb=-1.0, ub=1.0)],
+            "year": [UniformPrior(lb=-1.0, ub=1.0)]}
 
 
 @pytest.fixture

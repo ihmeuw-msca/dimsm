@@ -206,6 +206,9 @@ class GaussianPrior:
         r = self.mean - self.mat.dot(x)
         return -self.mat.T.dot(self.imat.dot(r))
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(size={self.size})"
+
 
 class UniformPrior:
     """Uniform prior class includes prior information that will be incorporate
@@ -324,3 +327,6 @@ class UniformPrior:
             self.lb = extend_info(self.lb, self.size)
             self.ub = extend_info(self.ub, self.size)
             self.mat = extend_info(self.mat, self.size)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(size={self.size})"
