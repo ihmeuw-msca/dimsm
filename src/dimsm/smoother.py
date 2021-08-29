@@ -176,6 +176,12 @@ class Smoother:
         # measurement
         value = self.meas.objective(params[self.var_indices["state"]])
 
+        # process
+        for name, prc in self.prcs.items():
+            value += prc.objective(params[self.var_indices[name]],
+                                   self.var_shape,
+                                   self.dim_names.index(name))
+
         return value
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
@@ -198,6 +204,13 @@ class Smoother:
         gvalue[self.var_indices["state"]] += self.meas.gradient(
             params[self.var_indices["state"]]
         )
+
+        # process
+        for name, prc in self.prcs.items():
+            indices = self.var_indices[name]
+            gvalue[indices] += prc.gradient(params[indices],
+                                            self.var_shape,
+                                            self.dim_names.index(name))
 
         return gvalue.ravel()
 
