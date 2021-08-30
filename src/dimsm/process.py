@@ -58,7 +58,7 @@ def default_gen_vmat(dt: float, size: int, sigma: float = 1.0) -> np.ndarray:
             mat[i, j] = dt**(i + j + 1)
             mat[i, j] /= (i + j + 1)*np.math.factorial(i)*np.math.factorial(j)
             mat[j, i] = mat[i, j]
-    return sigma*np.flip(mat)
+    return np.flip(mat)*sigma**2
 
 
 class Process:
