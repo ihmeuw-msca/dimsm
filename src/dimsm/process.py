@@ -53,10 +53,12 @@ def default_gen_vmat(dt: float, size: int, sigma: float = 1.0) -> np.ndarray:
         Process (co)variance matrix.
     """
     mat = np.zeros((size, size))
-    vec = np.flip(np.array([dt**i/i for i in range(1, 2*size)]))
     for i in range(size):
-        mat[i] = vec[i:i + size]
-    return sigma*mat
+        for j in range(i, size):
+            mat[i, j] = dt**(i + j + 1)
+            mat[i, j] /= (i + j + 1)*np.math.factorial(i)*np.math.factorial(j)
+            mat[j, i] = mat[i, j]
+    return sigma*np.flip(mat)
 
 
 class Process:
