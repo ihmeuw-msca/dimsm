@@ -6,14 +6,20 @@ import numpy as np
 from dimsm.prior import GaussianPrior, UniformPrior, extend_info
 
 
-def ad_jacobian(fun, x, shape, eps=1e-10):
-    n = len(x)
+def ad_jacobian(fun, x, out_shape=(), eps=1e-10):
     c = x + 0j
-    g = np.zeros(shape)
-    for i in np.ndindex(shape):
-        c[i] += eps*1j
-        g[i] = fun(c).imag/eps
-        c[i] -= eps*1j
+    g = np.zeros((*out_shape, *x.shape))
+    if len(out_shape) == 0:
+        for i in np.ndindex(x.shape):
+            c[i] += eps*1j
+            g[i] = fun(c).imag/eps
+            c[i] -= eps*1j
+    else:
+        for j in np.ndindex(out_shape):
+            for i in np.ndindex(x.shape):
+                c[i] += eps*1j
+                g[j][i] = fun(c)[j].imag/eps
+                c[i] -= eps*1j
     return g
 
 
@@ -75,8 +81,19 @@ def test_gprior_objective(mean, imat, size, x):
 def test_gprior_gradient(mean, imat, size, x):
     gprior = GaussianPrior(mean, imat, size=size)
     my_gradient = gprior.gradient(x)
-    tr_gradient = ad_jacobian(gprior.objective, x, x.shape)
+    tr_gradient = ad_jacobian(gprior.objective, x)
     assert np.allclose(my_gradient, tr_gradient)
+
+
+@pytest.mark.parametrize("mean", [1.0])
+@pytest.mark.parametrize("imat", [1.0])
+@pytest.mark.parametrize("size", [5])
+@pytest.mark.parametrize("x", [np.arange(5)])
+def test_gprior_hessian(mean, imat, size, x):
+    gprior = GaussianPrior(mean, imat, size=size)
+    my_hessian = gprior.hessian().toarray()
+    tr_hessian = ad_jacobian(gprior.gradient, x, out_shape=(x.size,))
+    assert np.allclose(my_hessian, tr_hessian)
 
 
 @pytest.mark.parametrize("lb", [0.0, np.zeros(5)])

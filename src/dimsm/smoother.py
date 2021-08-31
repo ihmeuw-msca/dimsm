@@ -9,9 +9,9 @@ from operator import attrgetter
 from typing import Dict, List, Optional
 
 import numpy as np
-from numpy.core.shape_base import block
-from scipy.optimize import minimize, LinearConstraint
-from scipy.sparse import block_diag
+from scipy.optimize import LinearConstraint, minimize
+from scipy.sparse import block_diag, bmat, csr_matrix
+from scipy.sparse.linalg import spsolve
 
 from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
@@ -80,6 +80,10 @@ class Smoother:
         Objective function.
     gradient(x)
         Gradient function.
+    hessian()
+        Hessian function.
+    update_hessian_cache()
+        Update Cache of Hessian matrix.
     fit(x0, **options)
         Fit the model.
     """
@@ -102,6 +106,7 @@ class Smoother:
         self.gpriors = gpriors
         self.upriors = upriors
 
+        self._hessian = None
         self.opt_result = None
         self.opt_vars = None
 
@@ -184,7 +189,7 @@ class Smoother:
     @upriors.setter
     def upriors(self, upriors: Optional[Dict[str, List[UniformPrior]]]):
         self._upriors = {}
-        self.lin_constraints = None
+        self.lin_constraints = []
         if upriors is not None:
             if not isinstance(upriors, Dict):
                 raise TypeError(f"{type(self).__name__}.gpriors must be a "
@@ -273,7 +278,7 @@ class Smoother:
             Gradient vector.
         """
         params = x.reshape(self.num_vars, self.var_size)
-        gvalue = np.zeros((self.num_vars, self.var_size))
+        gvalue = np.zeros((self.num_vars, self.var_size), dtype=x.dtype)
 
         # measurement
         gvalue[self.var_indices["state"]] += self.meas.gradient(
@@ -283,9 +288,10 @@ class Smoother:
         # process
         for name, prc in self.prcs.items():
             indices = [0] + self.var_indices[name]
-            gvalue[indices] += prc.gradient(params[indices],
-                                            self.var_shape,
-                                            self.dim_names.index(name))
+            gradient = prc.gradient(params[indices],
+                                    self.var_shape,
+                                    self.dim_names.index(name))
+            gvalue[indices] += gradient.reshape(len(indices), self.var_size)
 
         # gprior
         for name, gpriors in self.gpriors.items():
@@ -295,6 +301,52 @@ class Smoother:
                     gvalue[index] += gprior.gradient(params[index])
 
         return gvalue.ravel()
+
+    def update_hessian_cache(self):
+        """Update Cache of Hessian matrix."""
+        hvalue = [[csr_matrix((self.var_size, self.var_size))
+                   for _ in range(self.num_vars)]
+                  for _ in range(self.num_vars)]
+
+        # measurement
+        hvalue[0][0] = self.meas.hessian()
+
+        # process
+        for name, prc in self.prcs.items():
+            indices = [0] + self.var_indices[name]
+            hessian = prc.hessian(self.var_shape, self.dim_names.index(name))
+            for k, i in enumerate(indices):
+                for l, j in enumerate(indices):
+                    hvalue[i][j] += hessian[
+                        k*self.var_size:(k + 1)*self.var_size,
+                        l*self.var_size:(l + 1)*self.var_size
+                    ]
+
+        # gprior
+        for name, gpriors in self.gpriors.items():
+            for k, gprior in enumerate(gpriors):
+                if gprior is not None:
+                    i = self.var_indices[name][k]
+                    hvalue[i][i] += gprior.hessian()
+
+        self._hessian = csr_matrix(bmat(hvalue))
+
+    def hessian(self) -> np.ndarray:
+        """Hessian function.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        if self._hessian is None:
+            self.update_hessian_cache()
+        return self._hessian
+
+    def newton_gradient(self, x: np.ndarray) -> np.ndarray:
+        gradient = self.gradient(x)
+        hessian = self.hessian()
+        return spsolve(hessian, gradient)
 
     def fit(self,
             x0: Optional[np.ndarray] = None,
@@ -312,23 +364,14 @@ class Smoother:
             x0 = np.zeros(self.num_vars*self.var_size)
 
         # case when there is not constraints
-        if self.lin_constraints is None:
-            self.opt_result = minimize(
-                self.objective,
-                x0,
-                method="L-BFGS-B",
-                jac=self.gradient,
-                **options
-            )
-        else:
-            self.opt_result = minimize(
-                self.objective,
-                x0,
-                method="trust-constr",
-                jac=self.gradient,
-                constraints=self.lin_constraints,
-                **options
-            )
+        self.opt_result = minimize(
+            self.objective,
+            x0,
+            method="trust-constr",
+            jac=self.newton_gradient,
+            constraints=self.lin_constraints,
+            **options
+        )
         self.opt_vars = self.opt_result.x.reshape(self.num_vars, self.var_size)
 
     def __repr__(self) -> str:

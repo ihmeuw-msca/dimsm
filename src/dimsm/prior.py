@@ -7,7 +7,7 @@ Prior class contains prior information for state and dimension variable.
 from operator import attrgetter
 from typing import Union, Optional
 import numpy as np
-from scipy.sparse import diags
+from scipy.sparse import diags, csr_matrix
 
 
 def extend_info(info: np.ndarray, size: int) -> np.ndarray:
@@ -40,7 +40,7 @@ def extend_info(info: np.ndarray, size: int) -> np.ndarray:
         return info
     if info.ndim == 1:
         return np.repeat(info, size)
-    return diags(np.repeat(info.diagonal(), size))
+    return csr_matrix(diags(np.repeat(info.diagonal(), size)))
 
 
 class GaussianPrior:
@@ -94,6 +94,8 @@ class GaussianPrior:
         Objective function.
     graident(x)
         Gradient function.
+    hessian()
+        Hessian function.
     """
 
     mean = property(attrgetter("_mean"))
@@ -137,7 +139,7 @@ class GaussianPrior:
         if not all(imat.diagonal() > 0):
             raise ValueError(f"{type(self).__name__}.imat diagonal must be "
                              "positive.")
-        self._imat = imat
+        self._imat = csr_matrix(imat)
 
     @mat.setter
     def mat(self, mat: Optional[np.ndarray]):
@@ -147,7 +149,7 @@ class GaussianPrior:
                                  "a matrix.")
         else:
             mat = diags(np.ones(self.size))
-        self._mat = mat
+        self._mat = csr_matrix(mat)
 
     def update_size(self, size: int):
         """Update the size of the prior.
@@ -205,6 +207,16 @@ class GaussianPrior:
         """
         r = self.mean - self.mat.dot(x)
         return -self.mat.T.dot(self.imat.dot(r))
+
+    def hessian(self) -> np.ndarray:
+        """Hessian function.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        return self.mat.T.dot(self.imat.dot(self.mat))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(size={self.size})"
@@ -300,7 +312,7 @@ class UniformPrior:
                                  "a matrix.")
         else:
             mat = diags(np.ones(self.size))
-        self._mat = mat
+        self._mat = csr_matrix(mat)
 
     def update_size(self, size: int):
         """Update the size of the prior.

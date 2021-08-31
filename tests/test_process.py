@@ -8,14 +8,20 @@ from dimsm.process import default_gen_mat, default_gen_vmat, Process
 from dimsm.dimension import Dimension
 
 
-def ad_jacobian(fun, x, shape, eps=1e-10):
-    n = len(x)
+def ad_jacobian(fun, x, out_shape=(), eps=1e-10):
     c = x + 0j
-    g = np.zeros(shape)
-    for i in np.ndindex(shape):
-        c[i] += eps*1j
-        g[i] = fun(c).imag/eps
-        c[i] -= eps*1j
+    g = np.zeros((*out_shape, *x.shape))
+    if len(out_shape) == 0:
+        for i in np.ndindex(x.shape):
+            c[i] += eps*1j
+            g[i] = fun(c).imag/eps
+            c[i] -= eps*1j
+    else:
+        for j in np.ndindex(out_shape):
+            for i in np.ndindex(x.shape):
+                c[i] += eps*1j
+                g[j][i] = fun(c)[j].imag/eps
+                c[i] -= eps*1j
     return g
 
 
@@ -86,13 +92,27 @@ def test_process_gradient(process, dim):
     process.update_dim(dim)
     var_shape = (5, dim.size)
     dim_index = 1
-    x = np.ones((process.order + 1, np.prod(var_shape)))
+    x = np.ones((process.order + 1)*np.prod(var_shape))
 
     my_gradient = process.gradient(x, var_shape, dim_index)
     tr_gradient = ad_jacobian(
         partial(process.objective, var_shape=var_shape, dim_index=dim_index),
-        x,
-        x.shape
+        x
     )
 
     assert np.allclose(my_gradient, tr_gradient)
+
+
+def test_process_hessian(process, dim):
+    process.update_dim(dim)
+    var_shape = (5, dim.size)
+    dim_index = 1
+    x = np.ones((process.order + 1)*np.prod(var_shape))
+
+    my_hessian = process.hessian(var_shape, dim_index).toarray()
+    tr_hessian = ad_jacobian(
+        partial(process.gradient, var_shape=var_shape, dim_index=dim_index),
+        x,
+        out_shape=(x.size,)
+    )
+    assert np.allclose(my_hessian, tr_hessian)

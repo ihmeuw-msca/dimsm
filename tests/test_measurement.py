@@ -3,19 +3,27 @@ Test measurement module
 """
 import numpy as np
 import pandas as pd
+from scipy.sparse import diags
 import pytest
+
 from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
 
 
-def ad_jacobian(fun, x, shape, eps=1e-10):
-    n = len(x)
+def ad_jacobian(fun, x, out_shape=(), eps=1e-10):
     c = x + 0j
-    g = np.zeros(shape)
-    for i in np.ndindex(shape):
-        c[i] += eps*1j
-        g[i] = fun(c).imag/eps
-        c[i] -= eps*1j
+    g = np.zeros((*out_shape, *x.shape))
+    if len(out_shape) == 0:
+        for i in np.ndindex(x.shape):
+            c[i] += eps*1j
+            g[i] = fun(c).imag/eps
+            c[i] -= eps*1j
+    else:
+        for j in np.ndindex(out_shape):
+            for i in np.ndindex(x.shape):
+                c[i] += eps*1j
+                g[j][i] = fun(c)[j].imag/eps
+                c[i] -= eps*1j
     return g
 
 
@@ -41,7 +49,7 @@ def col_value():
 
 @pytest.fixture
 def imat():
-    return np.identity(6)
+    return diags(np.ones(6))
 
 
 @pytest.fixture
@@ -91,5 +99,13 @@ def test_gradient(measurement, dims):
     measurement.update_dim(dims)
     x = np.zeros(20)
     my_gradient = measurement.gradient(x)
-    tr_gradient = ad_jacobian(measurement.objective, x, x.shape)
+    tr_gradient = ad_jacobian(measurement.objective, x)
     assert np.allclose(my_gradient, tr_gradient)
+
+
+def test_hessian(measurement, dims):
+    measurement.update_dim(dims)
+    x = np.zeros(20)
+    my_hessian = measurement.hessian().toarray()
+    tr_hessian = ad_jacobian(measurement.gradient, x, out_shape=(x.size,))
+    assert np.allclose(my_hessian, tr_hessian)
