@@ -9,8 +9,8 @@ from operator import attrgetter
 from typing import Dict, List, Optional
 
 import numpy as np
-from scipy.optimize import minimize, LinearConstraint
-from scipy.sparse import block_diag, lil_matrix
+from scipy.optimize import LinearConstraint, minimize
+from scipy.sparse import block_diag, csr_matrix, bmat
 
 from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
@@ -312,32 +312,32 @@ class Smoother:
         np.ndarray
             Hessian matrix.
         """
-        size = self.num_vars * self.var_size
-        hvalue = lil_matrix((size, size))
+        hvalue = [[csr_matrix((self.var_size, self.var_size))
+                   for _ in range(self.num_vars)]
+                  for _ in range(self.num_vars)]
 
         # measurement
-        hvalue[:self.var_size, :self.var_size] = self.meas.hessian()
+        hvalue[0][0] = self.meas.hessian()
 
         # process
         for name, prc in self.prcs.items():
-            indices = np.hstack([
-                np.arange(i*self.var_size, (i + 1)*self.var_size)
-                for i in [0] + self.var_indices[name]]
-            )
+            indices = [0] + self.var_indices[name]
             hessian = prc.hessian(self.var_shape, self.dim_names.index(name))
-            hvalue[np.ix_(indices, indices)] += hessian
+            for k, i in enumerate(indices):
+                for l, j in enumerate(indices):
+                    hvalue[i][j] += hessian[
+                        k*self.var_size:(k + 1)*self.var_size,
+                        l*self.var_size:(l + 1)*self.var_size
+                    ]
 
         # gprior
         for name, gpriors in self.gpriors.items():
-            for i, gprior in enumerate(gpriors):
+            for k, gprior in enumerate(gpriors):
                 if gprior is not None:
-                    index = np.arange(
-                        self.var_indices[name][i]*self.var_size,
-                        (self.var_indices[name][i] + 1)*self.var_size
-                    )
-                    hvalue[np.ix_(index, index)] += gprior.hessian()
+                    i = self.var_indices[name][k]
+                    hvalue[i][i] += gprior.hessian()
 
-        return hvalue
+        return csr_matrix(bmat(hvalue))
 
     def fit(self,
             x0: Optional[np.ndarray] = None,

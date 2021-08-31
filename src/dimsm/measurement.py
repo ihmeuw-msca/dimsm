@@ -117,7 +117,7 @@ class Measurement:
         if not all(imat.diagonal() > 0):
             raise ValueError(f"{type(self).__name__}.imat diagonal must be "
                              "positive.")
-        self._imat = imat
+        self._imat = csr_matrix(imat)
 
     @property
     def size(self) -> int:

@@ -166,8 +166,10 @@ class Process:
             The corresponding dimenion.
         """
         dts = np.diff(dim.grid)
-        self.mat = block_diag([self.gen_mat(dt) for dt in dts])
-        self.imat = block_diag([np.linalg.inv(self.gen_vmat(dt)) for dt in dts])
+        self.mat = csr_matrix(block_diag([self.gen_mat(dt) for dt in dts]))
+        self.imat = csr_matrix(
+            block_diag([np.linalg.inv(self.gen_vmat(dt)) for dt in dts])
+        )
 
     def reshape_var(self,
                     x: np.ndarray,
