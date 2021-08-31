@@ -185,7 +185,7 @@ class Smoother:
     @upriors.setter
     def upriors(self, upriors: Optional[Dict[str, List[UniformPrior]]]):
         self._upriors = {}
-        self.lin_constraints = None
+        self.lin_constraints = []
         if upriors is not None:
             if not isinstance(upriors, Dict):
                 raise TypeError(f"{type(self).__name__}.gpriors must be a "
@@ -355,25 +355,15 @@ class Smoother:
             x0 = np.zeros(self.num_vars*self.var_size)
 
         # case when there is not constraints
-        if self.lin_constraints is None:
-            self.opt_result = minimize(
-                self.objective,
-                x0,
-                method="trust-constr",
-                jac=self.gradient,
-                hess=self.hessian,
-                **options
-            )
-        else:
-            self.opt_result = minimize(
-                self.objective,
-                x0,
-                method="trust-constr",
-                jac=self.gradient,
-                hess=self.hessian,
-                constraints=self.lin_constraints,
-                **options
-            )
+        self.opt_result = minimize(
+            self.objective,
+            x0,
+            method="trust-constr",
+            jac=self.gradient,
+            hess=self.hessian,
+            constraints=self.lin_constraints,
+            **options
+        )
         self.opt_vars = self.opt_result.x.reshape(self.num_vars, self.var_size)
 
     def __repr__(self) -> str:
