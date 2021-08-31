@@ -10,7 +10,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 from scipy.optimize import LinearConstraint, minimize
-from scipy.sparse import block_diag, csr_matrix, bmat
+from scipy.sparse import block_diag, bmat, csr_matrix
+from scipy.sparse.linalg import spsolve
 
 from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
@@ -81,6 +82,8 @@ class Smoother:
         Gradient function.
     hessian()
         Hessian function.
+    update_hessian_cache()
+        Update Cache of Hessian matrix.
     fit(x0, **options)
         Fit the model.
     """
@@ -103,6 +106,7 @@ class Smoother:
         self.gpriors = gpriors
         self.upriors = upriors
 
+        self._hessian = None
         self.opt_result = None
         self.opt_vars = None
 
@@ -298,20 +302,8 @@ class Smoother:
 
         return gvalue.ravel()
 
-    def hessian(self, x: Optional[np.ndarray] = None) -> np.ndarray:
-        """Hessian function.
-
-        Parameters
-        ----------
-        x : Optional[np.ndarray], optional
-            Variable array which is NOT used in the calculation. This is only
-            for the consistancy with scipy solver.
-
-        Returns
-        -------
-        np.ndarray
-            Hessian matrix.
-        """
+    def update_hessian_cache(self):
+        """Update Cache of Hessian matrix."""
         hvalue = [[csr_matrix((self.var_size, self.var_size))
                    for _ in range(self.num_vars)]
                   for _ in range(self.num_vars)]
@@ -337,7 +329,24 @@ class Smoother:
                     i = self.var_indices[name][k]
                     hvalue[i][i] += gprior.hessian()
 
-        return csr_matrix(bmat(hvalue))
+        self._hessian = csr_matrix(bmat(hvalue))
+
+    def hessian(self) -> np.ndarray:
+        """Hessian function.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        if self._hessian is None:
+            self.update_hessian_cache()
+        return self._hessian
+
+    def newton_gradient(self, x: np.ndarray) -> np.ndarray:
+        gradient = self.gradient(x)
+        hessian = self.hessian()
+        return spsolve(hessian, gradient)
 
     def fit(self,
             x0: Optional[np.ndarray] = None,
@@ -359,8 +368,7 @@ class Smoother:
             self.objective,
             x0,
             method="trust-constr",
-            jac=self.gradient,
-            hess=self.hessian,
+            jac=self.newton_gradient,
             constraints=self.lin_constraints,
             **options
         )
