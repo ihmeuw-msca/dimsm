@@ -9,7 +9,7 @@ from operator import attrgetter
 from typing import Callable, Optional, Tuple
 
 import numpy as np
-from scipy.sparse import block_diag
+from scipy.sparse import block_diag, csr_matrix, diags
 
 from dimsm.dimension import Dimension
 
@@ -107,8 +107,10 @@ class Process:
         Reshape the variable array.
     objective(x, var_shape, dim_index)
         Objective function.
-    Gradient(x, var_shape, dim_index)
+    gradient(x, var_shape, dim_index)
         Gradient function.
+    hessian(var_shape, dim_index)
+        Hessian function.
     """
 
     order = property(attrgetter("_order"))
@@ -195,20 +197,14 @@ class Process:
         other_dim_indices.remove(dim_index)
 
         if reverse:
-            ordered_dim_indices = [i + 1 for i in other_dim_indices]
-            if dim_index > 0:
-                ordered_dim_indices = [i + 1 for i in ordered_dim_indices]
-            ordered_dim_indices.insert(dim_index, 0)
-            x = x.reshape(var_shape[dim_index],
-                          self.order + 1,
-                          *[var_shape[i] for i in other_dim_indices])
-            x = x.transpose(1, *ordered_dim_indices)
-            x = x.reshape(self.order + 1, np.prod(var_shape))
-            return x
+            indices = np.argsort(self.reshape_var(
+                np.arange(x.size), var_shape, dim_index, reverse=False
+            ).ravel())
+            return x.ravel()[indices]
         x = x.reshape(self.order + 1, *var_shape)
-        x = x.transpose((dim_index + 1, 0, *[i + 1 for i in other_dim_indices]))
-        x = x.reshape(var_shape[dim_index]*(self.order + 1),
-                      int(np.prod([var_shape[i] for i in other_dim_indices])))
+        x = x.transpose((*[i + 1 for i in other_dim_indices], dim_index + 1, 0))
+        x = x.reshape(int(np.prod([var_shape[i] for i in other_dim_indices])),
+                      var_shape[dim_index]*(self.order + 1))
         return x
 
     def objective(self,
@@ -233,7 +229,7 @@ class Process:
         """
         s = self.order + 1
         x = self.reshape_var(x, var_shape, dim_index)
-        r = x[s:] - self.mat.dot(x[:-s])
+        r = x.T[s:] - self.mat.dot(x.T[:-s])
         t = self.imat.dot(r)
         return 0.5*np.sum(r*t)
 
@@ -259,14 +255,48 @@ class Process:
         """
         s = self.order + 1
         x = self.reshape_var(x, var_shape, dim_index)
-        r = x[s:] - self.mat.dot(x[:-s])
+        r = x.T[s:] - self.mat.dot(x.T[:-s])
         t = self.imat.dot(r)
-        g = np.zeros(x.shape)
+        g = np.zeros(x.shape, dtype=x.dtype)
 
-        g[s:] += t
-        g[:-s] -= self.mat.T.dot(t)
+        g.T[s:] += t
+        g.T[:-s] -= self.mat.T.dot(t)
 
         return self.reshape_var(g, var_shape, dim_index, reverse=True)
+
+    def hessian(self,
+                var_shape: Tuple[int],
+                dim_index: int) -> np.ndarray:
+        """Hessian function.
+
+        Parameters
+        ----------
+        var_shape : Tuple[int]
+            Variable shape corresponding to one layer.
+        dim_index : int
+            Corresponding dimension index.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        s = self.order + 1
+        n = var_shape[dim_index]
+        k = np.prod(var_shape) // n
+        # compute hessian for each column
+        mat_m = diags(np.ones((n - 1)*s), shape=((n - 1)*s, n*s))
+        mat_p = diags(np.ones((n - 1)*s), shape=((n - 1)*s, n*s), offsets=s)
+        mat = mat_p - self.mat.dot(mat_m)
+        row_hessian = mat.T.dot(self.imat.dot(mat))
+        # create hessian matrix
+        hessian = csr_matrix(block_diag([row_hessian]*k))
+        # permute hessian into right order
+        indices = self.reshape_var(
+            np.arange(n*s*k), var_shape, dim_index, reverse=True
+        )
+        hessian = hessian[indices[:, None], indices]
+        return hessian
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(order={self.order})"

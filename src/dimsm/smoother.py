@@ -283,9 +283,10 @@ class Smoother:
         # process
         for name, prc in self.prcs.items():
             indices = [0] + self.var_indices[name]
-            gvalue[indices] += prc.gradient(params[indices],
-                                            self.var_shape,
-                                            self.dim_names.index(name))
+            gradient = prc.gradient(params[indices],
+                                    self.var_shape,
+                                    self.dim_names.index(name))
+            gvalue[indices] += gradient.reshape(len(indices), self.var_size)
 
         # gprior
         for name, gpriors in self.gpriors.items():

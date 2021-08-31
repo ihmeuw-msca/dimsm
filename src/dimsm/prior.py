@@ -94,6 +94,8 @@ class GaussianPrior:
         Objective function.
     graident(x)
         Gradient function.
+    hessian()
+        Hessian function.
     """
 
     mean = property(attrgetter("_mean"))
@@ -205,6 +207,16 @@ class GaussianPrior:
         """
         r = self.mean - self.mat.dot(x)
         return -self.mat.T.dot(self.imat.dot(r))
+
+    def hessian(self) -> np.ndarray:
+        """Hessian function.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        return self.mat.T.dot(self.imat.dot(self.mat))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(size={self.size})"

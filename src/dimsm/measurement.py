@@ -68,6 +68,8 @@ class Measurement:
         Objective function.
     graident(x)
         Gradient function.
+    hessian()
+        Hessian function.
     """
 
     data = property(attrgetter("_data"))
@@ -99,8 +101,7 @@ class Measurement:
 
     @imat.setter
     def imat(self, imat: Union[float, np.ndarray]):
-        imat = np.asarray(imat).astype(float)
-        if imat.ndim == 0:
+        if np.isscalar(imat):
             imat = np.repeat(imat, self.size)
         if imat.ndim == 1:
             imat = diags(imat)
@@ -195,6 +196,16 @@ class Measurement:
         """
         r = self.data[self.col_value].values - self.mat.dot(x.ravel())
         return -self.mat.T.dot(self.imat.dot(r))
+
+    def hessian(self) -> np.ndarray:
+        """Hessian function.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        return self.mat.T.dot(self.imat.dot(self.mat))
 
     def __repr__(self) -> int:
         return f"{type(self).__name__}(size={self.size})"
