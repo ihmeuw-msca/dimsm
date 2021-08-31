@@ -9,9 +9,8 @@ from operator import attrgetter
 from typing import Dict, List, Optional
 
 import numpy as np
-from numpy.core.shape_base import block
 from scipy.optimize import minimize, LinearConstraint
-from scipy.sparse import block_diag
+from scipy.sparse import block_diag, lil_matrix
 
 from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
@@ -80,6 +79,8 @@ class Smoother:
         Objective function.
     gradient(x)
         Gradient function.
+    hessian()
+        Hessian function.
     fit(x0, **options)
         Fit the model.
     """
@@ -273,7 +274,7 @@ class Smoother:
             Gradient vector.
         """
         params = x.reshape(self.num_vars, self.var_size)
-        gvalue = np.zeros((self.num_vars, self.var_size))
+        gvalue = np.zeros((self.num_vars, self.var_size), dtype=x.dtype)
 
         # measurement
         gvalue[self.var_indices["state"]] += self.meas.gradient(
@@ -297,6 +298,47 @@ class Smoother:
 
         return gvalue.ravel()
 
+    def hessian(self, x: Optional[np.ndarray] = None) -> np.ndarray:
+        """Hessian function.
+
+        Parameters
+        ----------
+        x : Optional[np.ndarray], optional
+            Variable array which is NOT used in the calculation. This is only
+            for the consistancy with scipy solver.
+
+        Returns
+        -------
+        np.ndarray
+            Hessian matrix.
+        """
+        size = self.num_vars * self.var_size
+        hvalue = lil_matrix((size, size))
+
+        # measurement
+        hvalue[:self.var_size, :self.var_size] = self.meas.hessian()
+
+        # process
+        for name, prc in self.prcs.items():
+            indices = np.hstack([
+                np.arange(i*self.var_size, (i + 1)*self.var_size)
+                for i in [0] + self.var_indices[name]]
+            )
+            hessian = prc.hessian(self.var_shape, self.dim_names.index(name))
+            hvalue[np.ix_(indices, indices)] += hessian
+
+        # gprior
+        for name, gpriors in self.gpriors.items():
+            for i, gprior in enumerate(gpriors):
+                if gprior is not None:
+                    index = np.arange(
+                        self.var_indices[name][i]*self.var_size,
+                        (self.var_indices[name][i] + 1)*self.var_size
+                    )
+                    hvalue[np.ix_(index, index)] += gprior.hessian()
+
+        return hvalue
+
     def fit(self,
             x0: Optional[np.ndarray] = None,
             **options):
@@ -317,8 +359,9 @@ class Smoother:
             self.opt_result = minimize(
                 self.objective,
                 x0,
-                method="L-BFGS-B",
+                method="trust-constr",
                 jac=self.gradient,
+                hess=self.hessian,
                 **options
             )
         else:
@@ -327,6 +370,7 @@ class Smoother:
                 x0,
                 method="trust-constr",
                 jac=self.gradient,
+                hess=self.hessian,
                 constraints=self.lin_constraints,
                 **options
             )
