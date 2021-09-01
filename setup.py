@@ -9,7 +9,7 @@ if __name__ == "__main__":
     about = {}
     exec(open(src_dir / "__about__.py").read(), about)
 
-    with (base_dir / "README.rst").open() as f:
+    with (base_dir / "README.md").open() as f:
         long_description = f.read()
 
     install_requirements = [
