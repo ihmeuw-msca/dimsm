@@ -31,19 +31,19 @@ class IPSolver:
             self.c_vec = np.hstack([-lb[~np.isneginf(lb)],
                                     ub[~np.isposinf(ub)]])
 
-    def get_f(self,
-              p: List[np.ndarray],
-              mu: float) -> List[np.ndarray]:
+    def get_kkt(self,
+                p: List[np.ndarray],
+                mu: float) -> List[np.ndarray]:
         return [
             self.c_mat.dot(p[0]) + p[1] - self.c_vec,
             p[1]*p[2] - mu,
             self.h_mat.dot(p[0]) + self.g_vec + self.c_mat.T.dot(p[2])
         ]
 
-    def get_a(self,
-              p: List[np.ndarray],
-              dp: List[np.ndarray],
-              scale: float = 0.99) -> float:
+    def get_step(self,
+                 p: List[np.ndarray],
+                 dp: List[np.ndarray],
+                 scale: float = 0.99) -> float:
         a = 1.0
         for i in [1, 2]:
             indices = dp[i] < 0.0
@@ -58,7 +58,7 @@ class IPSolver:
                  max_iter: int = 100,
                  mu: float = 1.0,
                  scale_mu: float = 0.1,
-                 scale_a: float = 0.99,
+                 scale_step: float = 0.99,
                  verbose: bool = False):
         if self.linear_constraints is None:
             if verbose:
@@ -73,28 +73,25 @@ class IPSolver:
             np.ones(self.c_vec.size)
         ]
 
-        f = self.get_f(p, mu)
-        error = np.max(np.abs(np.hstack(f)))
+        f = self.get_kkt(p, mu)
+        gnorm = np.max(np.abs(np.hstack(f)))
         xdiff = 1.0
+        step = 1.0
         counter = 0
 
         if verbose:
             print(f"{type(self).__name__}:")
-            print("iter  error     xdiff      mu")
-            print(f"{counter:4d}  {error:.2e}  {xdiff:.2e}  {mu: .2e}")
+            print(f"{counter=:3d}, {gnorm=:.2e}, {xdiff=:.2e}, {step=:.2e}, "
+                  f"{mu=:.2e}")
 
-        while (error > gtol) and (xdiff > xtol) and (counter < max_iter):
+        while (gnorm > gtol) and (xdiff > xtol) and (counter < max_iter):
             counter += 1
+
             # cache convenient variables
             sv_vec = p[2] / p[1]
-
             sf2_vec = f[1] / p[1]
-
             csv_mat = self.c_mat.copy()
             csv_mat.data *= np.take(sv_vec, csv_mat.indices)
-
-            cv_mat = self.c_mat.copy()
-            cv_mat.data *= np.take(p[2], cv_mat.indices)
 
             # compute all directions
             mat = self.h_mat + csv_mat.T.dot(self.c_mat)
@@ -105,21 +102,22 @@ class IPSolver:
             dp = [dx, ds, dv]
 
             # get step size
-            a = self.get_a(p, dp, scale=scale_a)
+            step = self.get_step(p, dp, scale=scale_step)
 
             # update parameters
             for i in range(len(p)):
-                p[i] += a * dp[i]
+                p[i] += step * dp[i]
 
             # update mu
             mu = scale_mu*p[1].dot(p[2])/len(p[1])
 
-            # update f and error
-            f = self.get_f(p, mu)
-            error = np.max(np.abs(np.hstack(f)))
-            xdiff = a*np.max(np.abs(dp[0]))
+            # update f and gnorm
+            f = self.get_kkt(p, mu)
+            gnorm = np.max(np.abs(np.hstack(f)))
+            xdiff = step*np.max(np.abs(dp[0]))
 
             if verbose:
-                print(f"{counter:4d}  {error:.2e}  {xdiff:.2e}  {mu: .2e}")
+                print(f"{counter=:3d}, {gnorm=:.2e}, {xdiff=:.2e}, "
+                      f"{step=:.2e}, {mu=:.2e}")
 
         return p[0]
