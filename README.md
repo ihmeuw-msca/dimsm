@@ -1,4 +1,5 @@
 [![build](https://github.com/ihmeuw-msca/dimsm/actions/workflows/build.yml/badge.svg)](https://github.com/ihmeuw-msca/dimsm/actions/workflows/build.yml)
+[![pypi](https://badge.fury.io/py/dimsm.svg)](https://badge.fury.io/py/dimsm)
 
 # Dimension Smoother
 
