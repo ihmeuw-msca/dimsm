@@ -1,3 +1,5 @@
+[![build](https://github.com/ihmeuw-msca/dimsm/actions/workflows/build.yml/badge.svg)](https://github.com/ihmeuw-msca/dimsm/actions/workflows/build.yml)
+
 # Dimension Smoother
 
 Kalman based smoother, smoothing data across different dimensions.
