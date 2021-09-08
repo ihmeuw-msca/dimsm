@@ -6,6 +6,7 @@ Smoother class gathers all components information, provides interface for
 optimization solver and user to extract the results.
 """
 from operator import attrgetter
+import operator
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -17,6 +18,7 @@ from dimsm.dimension import Dimension
 from dimsm.measurement import Measurement
 from dimsm.prior import GaussianPrior, UniformPrior
 from dimsm.process import Process
+from dimsm.solver import IPSolver
 
 
 class Smoother:
@@ -189,7 +191,7 @@ class Smoother:
     @upriors.setter
     def upriors(self, upriors: Optional[Dict[str, List[UniformPrior]]]):
         self._upriors = {}
-        self.lin_constraints = []
+        self.lin_constraints = None
         if upriors is not None:
             if not isinstance(upriors, Dict):
                 raise TypeError(f"{type(self).__name__}.gpriors must be a "
@@ -364,15 +366,11 @@ class Smoother:
             x0 = np.zeros(self.num_vars*self.var_size)
 
         # case when there is not constraints
-        self.opt_result = minimize(
-            self.objective,
-            x0,
-            method="trust-constr",
-            jac=self.newton_gradient,
-            constraints=self.lin_constraints,
-            **options
-        )
-        self.opt_vars = self.opt_result.x.reshape(self.num_vars, self.var_size)
+        h_mat = self.hessian()
+        g_vec = self.gradient(x0) - h_mat.dot(x0)
+        solver = IPSolver(h_mat, g_vec, self.lin_constraints)
+        self.opt_vars = solver.minimize(**options)
+        self.opt_vars = self.opt_vars.reshape(self.num_vars, self.var_size)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}(\n"
