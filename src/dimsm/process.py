@@ -12,6 +12,7 @@ import numpy as np
 from scipy.sparse import block_diag, csr_matrix, diags
 
 from dimsm.dimension import Dimension
+from dimsm.utils import reshape_var
 
 
 def default_gen_mat(dt: float, size: int) -> np.ndarray:
@@ -103,8 +104,6 @@ class Process:
     -------
     update_dim(dim)
         Update process matrices and their (co)variance matrices.
-    reshape_var(x, var_shape, dim_index, reverse=False)
-        Reshape the variable array.
     objective(x, var_shape, dim_index)
         Objective function.
     gradient(x, var_shape, dim_index)
@@ -171,44 +170,6 @@ class Process:
             block_diag([np.linalg.inv(self.gen_vmat(dt)) for dt in dts])
         )
 
-    def reshape_var(self,
-                    x: np.ndarray,
-                    var_shape: Tuple[int],
-                    dim_index: int,
-                    reverse: bool = False) -> np.ndarray:
-        """Reshape the variable array.
-
-        Parameters
-        ----------
-        x : np.ndarray
-            Variable array.
-        var_shape : Tuple[int]
-            Variable shape corresponding to one layer.
-        dim_index : int
-            Corresponding dimension index.
-        reverse : bool, optional
-            If `True` reshape the variable back to origibnal shape, by default
-            `False`.
-
-        Returns
-        -------
-        np.ndarray
-            Reshaped variable array.
-        """
-        other_dim_indices = list(range(len(var_shape)))
-        other_dim_indices.remove(dim_index)
-
-        if reverse:
-            indices = np.argsort(self.reshape_var(
-                np.arange(x.size), var_shape, dim_index, reverse=False
-            ).ravel())
-            return x.ravel()[indices]
-        x = x.reshape(self.order + 1, *var_shape)
-        x = x.transpose((*[i + 1 for i in other_dim_indices], dim_index + 1, 0))
-        x = x.reshape(int(np.prod([var_shape[i] for i in other_dim_indices])),
-                      var_shape[dim_index]*(self.order + 1))
-        return x
-
     def objective(self,
                   x: np.ndarray,
                   var_shape: Tuple[int],
@@ -230,7 +191,7 @@ class Process:
             Objective value.
         """
         s = self.order + 1
-        x = self.reshape_var(x, var_shape, dim_index)
+        x = reshape_var(x, var_shape, dim_index)
         r = x.T[s:] - self.mat.dot(x.T[:-s])
         t = self.imat.dot(r)
         return 0.5*np.sum(r*t)
@@ -256,7 +217,7 @@ class Process:
             Gradient array.
         """
         s = self.order + 1
-        x = self.reshape_var(x, var_shape, dim_index)
+        x = reshape_var(x, var_shape, dim_index)
         r = x.T[s:] - self.mat.dot(x.T[:-s])
         t = self.imat.dot(r)
         g = np.zeros(x.shape, dtype=x.dtype)
@@ -264,7 +225,7 @@ class Process:
         g.T[s:] += t
         g.T[:-s] -= self.mat.T.dot(t)
 
-        return self.reshape_var(g, var_shape, dim_index, reverse=True)
+        return reshape_var(g, var_shape, dim_index, reverse=True)
 
     def hessian(self,
                 var_shape: Tuple[int],
@@ -294,7 +255,7 @@ class Process:
         # create hessian matrix
         hessian = csr_matrix(block_diag([row_hessian]*k))
         # permute hessian into right order
-        indices = self.reshape_var(
+        indices = reshape_var(
             np.arange(n*s*k), var_shape, dim_index, reverse=True
         )
         hessian = hessian[indices[:, None], indices]
