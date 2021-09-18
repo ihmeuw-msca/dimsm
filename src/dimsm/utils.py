@@ -6,6 +6,7 @@ Utility functions that can be used across different modules.
 """
 from typing import Tuple
 import numpy as np
+from numba import njit
 
 
 def reshape_var(x: np.ndarray,
@@ -48,3 +49,64 @@ def reshape_var(x: np.ndarray,
     x = x.transpose(np.hstack([other_dim_indices + 1, dim_index + 1, 0]))
     x = x.reshape(n // var_shape[dim_index], var_shape[dim_index]*k)
     return x
+
+
+@njit
+def unravel_index(index: int, dims: Tuple[int]) -> np.ndarray:
+    """Unravel the index into multi index.
+
+    Parameters
+    ----------
+    index : int
+        Given index.
+    dims : Tuple[int]
+        Given dimensions.
+
+    Returns
+    -------
+    np.ndarray
+        Returns multi index.
+    """
+    ndim = len(dims)
+    multi_index = np.zeros(ndim, dtype=np.int64)
+    sizes = np.zeros(ndim, dtype=np.int64)
+
+    sizes[-1] = 1
+    for i in range(ndim - 1):
+        sizes[ndim - 2 - i] = sizes[ndim - 1 - i] * dims[ndim - 1 - i]
+
+    for i in range(ndim):
+        multi_index[i] = index // sizes[i]
+        index -= multi_index[i] * sizes[i]
+
+    return multi_index
+
+
+@njit
+def ravel_multi_index(multi_index: Tuple[int], dims: Tuple[int]) -> int:
+    """Ravel multi index into single index.
+
+    Parameters
+    ----------
+    multi_index : Tuple[int]
+        Given multi index.
+    dims : Tuple[int]
+        Given dimension.
+
+    Returns
+    -------
+    int
+        Returns index when flatten the multiarray.
+    """
+    ndim = len(dims)
+    index = 0
+    sizes = np.zeros(ndim, dtype=np.int64)
+
+    sizes[-1] = 1
+    for i in range(ndim - 1):
+        sizes[ndim - 2 - i] = sizes[ndim - 1 - i] * dims[ndim - 1 - i]
+
+    for i in range(ndim):
+        index += multi_index[i]*sizes[i]
+
+    return index
