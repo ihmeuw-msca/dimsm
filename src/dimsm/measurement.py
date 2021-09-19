@@ -64,7 +64,7 @@ class Measurement:
 
     Methods
     -------
-    update_dim(dims)
+    update_dim(dims, method='numba')
         Update the observation linear mapping.
     objective(x)
         Objective function.
@@ -126,15 +126,20 @@ class Measurement:
         """Size of the observations."""
         return self.data.shape[0]
 
-    def update_dim(self, dims: List[Dimension]):
+    def update_dim(self, dims: List[Dimension], method: str = "numba"):
         """Update the observation linear mapping.
 
         Parameters
         ----------
         dims : List[Dimension]
             Dimensions specification.
+        method : {'numba', 'naive'}, optional
+            Name of the method getting the design matrix.
         """
-        self.mat = get_mat(self.data, dims)
+        if method == "numba":
+            self.mat = get_mat(self.data, dims)
+        else:
+            self.mat = get_mat_naive(self.data, dims)
 
     def objective(self, x: np.ndarray) -> float:
         """Objective function.
@@ -236,3 +241,38 @@ def get_mat_specs(dim_labels, dim_grids, dim_indices):
             mat_entries[i*index_size + j] = np.prod(weights[pos_indices])
 
     return row_indices, col_indices, mat_entries
+
+
+def get_mat_naive(data, dims):
+    var_shape = tuple(dim.size for dim in dims)
+    row_indices = []
+    col_indices = []
+    mat_weights = []
+
+    for i, obs in data.iterrows():
+        dim_indices = []
+        dim_weights = []
+        for dim in dims:
+            x = obs[dim.name]
+            j = dim.grid.searchsorted(x, side="right")
+            if j == 0:
+                indices, weights = (0,), (1,)
+            elif j == dim.size:
+                indices, weights = (dim.size - 1,), (1,)
+            else:
+                p = (dim.grid[j] - x) / (dim.grid[j] - dim.grid[j - 1])
+                indices, weights = (j - 1, j), (p, 1 - p)
+            dim_indices.append(indices)
+            dim_weights.append(weights)
+        indices = product(*dim_indices)
+        weights = product(*dim_weights)
+
+        add_col_indices = list(
+            map(lambda x: np.ravel_multi_index(x, var_shape), indices)
+        )
+        col_indices.extend(add_col_indices)
+        row_indices.extend([i]*len(add_col_indices))
+        mat_weights.extend(list(map(np.prod, weights)))
+
+    return csr_matrix((mat_weights, (row_indices, col_indices)),
+                      shape=(data.shape[0], np.prod(var_shape)))
