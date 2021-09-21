@@ -51,15 +51,17 @@ def prcs():
 
 
 @pytest.fixture
-def gpriors():
-    return {"state": [GaussianPrior(mean=0.0, imat=1.0)],
-            "year": [GaussianPrior(mean=0.0, imat=1.0)]}
+def gpriors(dims):
+    n = np.prod([dim.size for dim in dims])
+    return {"state": [GaussianPrior(mean=np.zeros(n), imat=1.0)],
+            "year": [GaussianPrior(mean=np.zeros(n), imat=1.0)]}
 
 
 @pytest.fixture
-def upriors():
-    return {"state": [UniformPrior(lb=-1.0, ub=1.0)],
-            "year": [UniformPrior(lb=-1.0, ub=1.0)]}
+def upriors(dims):
+    n = np.prod([dim.size for dim in dims])
+    return {"state": [UniformPrior(lb=-np.ones(n), ub=1.0)],
+            "year": [UniformPrior(lb=-np.ones(n), ub=1.0)]}
 
 
 @pytest.fixture
