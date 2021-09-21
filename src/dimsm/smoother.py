@@ -185,7 +185,6 @@ class Smoother:
                             raise ValueError(f"{type(self).__name__}.gpriors "
                                              "must be a list `None` or instance"
                                              " of GaussianPrior.")
-                        prior.update_size(self.var_size)
             self._gpriors = gpriors
 
     @upriors.setter
@@ -210,7 +209,6 @@ class Smoother:
                             raise ValueError(f"{type(self).__name__}.gpriors "
                                              "must be a list `None` or instance"
                                              " of UniformPrior.")
-                        prior.update_size(self.var_size)
             self._upriors = upriors
             mat = []
             vec_lb = []
