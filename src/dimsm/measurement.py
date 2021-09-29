@@ -11,7 +11,9 @@ from itertools import product
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix, diags
+from numba import njit, typed
 from dimsm.dimension import Dimension
+from dimsm.utils import ravel_multi_index, unravel_index
 
 
 class Measurement:
@@ -62,7 +64,7 @@ class Measurement:
 
     Methods
     -------
-    update_dim(dims)
+    update_dim(dims, method='numba')
         Update the observation linear mapping.
     objective(x)
         Objective function.
@@ -124,46 +126,20 @@ class Measurement:
         """Size of the observations."""
         return self.data.shape[0]
 
-    def update_dim(self, dims: List[Dimension]):
+    def update_dim(self, dims: List[Dimension], method: str = "numba"):
         """Update the observation linear mapping.
 
         Parameters
         ----------
         dims : List[Dimension]
             Dimensions specification.
+        method : {'numba', 'naive'}, optional
+            Name of the method getting the design matrix.
         """
-        var_shape = tuple(dim.size for dim in dims)
-        row_indices = []
-        col_indices = []
-        mat_weights = []
-
-        for i, obs in self.data.iterrows():
-            dim_indices = []
-            dim_weights = []
-            for dim in dims:
-                x = obs[dim.name]
-                j = dim.grid.searchsorted(x, side="right")
-                if j == 0:
-                    indices, weights = (0,), (1,)
-                elif j == dim.size:
-                    indices, weights = (dim.size - 1,), (1,)
-                else:
-                    p = (dim.grid[j] - x) / (dim.grid[j] - dim.grid[j - 1])
-                    indices, weights = (j - 1, j), (p, 1 - p)
-                dim_indices.append(indices)
-                dim_weights.append(weights)
-            indices = product(*dim_indices)
-            weights = product(*dim_weights)
-
-            add_col_indices = list(
-                map(lambda x: np.ravel_multi_index(x, var_shape), indices)
-            )
-            col_indices.extend(add_col_indices)
-            row_indices.extend([i]*len(add_col_indices))
-            mat_weights.extend(list(map(np.prod, weights)))
-
-        self.mat = csr_matrix((mat_weights, (row_indices, col_indices)),
-                              shape=(self.size, np.prod(var_shape)))
+        if method == "numba":
+            self.mat = get_mat(self.data, dims)
+        else:
+            self.mat = get_mat_naive(self.data, dims)
 
     def objective(self, x: np.ndarray) -> float:
         """Objective function.
@@ -209,3 +185,94 @@ class Measurement:
 
     def __repr__(self) -> int:
         return f"{type(self).__name__}(size={self.size})"
+
+
+def get_mat(data, dims):
+    dim_sizes = [dim.size for dim in dims]
+    dim_grids = typed.List([dim.grid for dim in dims])
+    dim_labels = np.vstack([data[dim.name].values for dim in dims])
+    dim_indices = np.vstack([
+        np.searchsorted(dim.grid, dim_labels[i], side="right")
+        for i, dim in enumerate(dims)
+    ])
+
+    row_indices, col_indices, mat_entries = get_mat_specs(
+        dim_labels, dim_grids, dim_indices
+    )
+    return csr_matrix((mat_entries, (row_indices, col_indices)),
+                      shape=(data.shape[0], np.prod(dim_sizes)))
+
+
+@njit
+def get_mat_specs(dim_labels, dim_grids, dim_indices):
+    ndat = dim_labels.shape[1]
+    ndim = len(dim_grids)
+    dim_sizes = typed.List([dim_grid.size for dim_grid in dim_grids])
+
+    index_shape = np.full(ndim, 2)
+    index_size = 2**ndim
+    netr = ndat*(2**ndim)
+
+    row_indices = np.repeat(np.arange(ndat, dtype=np.int64), index_size)
+    col_indices = np.zeros(netr, dtype=np.int64)
+    mat_entries = np.zeros(netr, dtype=np.float64)
+
+    for i in range(ndat):
+        indices = np.zeros(2*ndim, dtype=np.int64)
+        weights = np.zeros(2*ndim, dtype=np.float64)
+        for j in range(ndim):
+            k = 2*j
+            indices[k] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i] - 1))
+            indices[k + 1] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i]))
+            if indices[k] == indices[k + 1]:
+                weights[k] = 1.0
+                weights[k + 1] = 1.0
+            else:
+                weights[k] = \
+                    (dim_grids[j][indices[k + 1]] - dim_labels[j, i]) / \
+                    (dim_grids[j][indices[k + 1]] - dim_grids[j][indices[k]])
+                weights[k + 1] = 1.0 - weights[k]
+
+        offsets = 2*np.arange(ndim)
+        for j in range(index_size):
+            pos_indices = unravel_index(j, index_shape) + offsets
+            col_indices[i*index_size + j] = \
+                ravel_multi_index(indices[pos_indices], dim_sizes)
+            mat_entries[i*index_size + j] = np.prod(weights[pos_indices])
+
+    return row_indices, col_indices, mat_entries
+
+
+def get_mat_naive(data, dims):
+    var_shape = tuple(dim.size for dim in dims)
+    row_indices = []
+    col_indices = []
+    mat_weights = []
+
+    for i, obs in data.iterrows():
+        dim_indices = []
+        dim_weights = []
+        for dim in dims:
+            x = obs[dim.name]
+            j = dim.grid.searchsorted(x, side="right")
+            if j == 0:
+                indices, weights = (0,), (1,)
+            elif j == dim.size:
+                indices, weights = (dim.size - 1,), (1,)
+            else:
+                p = (dim.grid[j] - x) / (dim.grid[j] - dim.grid[j - 1])
+                indices, weights = (j - 1, j), (p, 1 - p)
+            dim_indices.append(indices)
+            dim_weights.append(weights)
+        indices = product(*dim_indices)
+        weights = product(*dim_weights)
+
+        add_col_indices = list(
+            map(lambda x: np.ravel_multi_index(x, var_shape), indices)
+        )
+        col_indices.extend(add_col_indices)
+        row_indices.extend([i]*len(add_col_indices))
+        mat_weights.extend(list(map(np.prod, weights)))
+
+    return csr_matrix((mat_weights, (row_indices, col_indices)),
+                      shape=(data.shape[0], np.prod(var_shape)))

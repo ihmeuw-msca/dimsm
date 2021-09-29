@@ -17,6 +17,7 @@ if __name__ == "__main__":
         "scipy",
         "pandas",
         "xarray",
+        "numba",
     ]
 
     test_requirements = [
