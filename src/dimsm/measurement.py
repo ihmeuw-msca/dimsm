@@ -4,7 +4,7 @@ Measurement
 
 Contains table of measurements and the (co)variance matrix.
 """
-from typing import List, Union
+from typing import List, Union, Tuple
 from operator import attrgetter
 from itertools import product
 
@@ -136,10 +136,7 @@ class Measurement:
         method : {'numba', 'naive'}, optional
             Name of the method getting the design matrix.
         """
-        if method == "numba":
-            self.mat = get_mat(self.data, dims)
-        else:
-            self.mat = get_mat_naive(self.data, dims)
+        self.mat = get_mat(self.data, dims, method=method)
 
     def objective(self, x: np.ndarray) -> float:
         """Objective function.
@@ -187,7 +184,25 @@ class Measurement:
         return f"{type(self).__name__}(size={self.size})"
 
 
-def get_mat(data, dims):
+def get_mat(data: pd.DataFrame,
+            dims: List[Dimension],
+            method: str = "numba") -> csr_matrix:
+    """Get design matrix.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Data frame that contains the data.
+    dims : List[Dimension]
+        Dimensions settings.
+    method : str, optional
+        Method to get the design matrix, by default "numba".
+
+    Returns
+    -------
+    csr_matrix
+        Returns the design matrix.
+    """
     dim_sizes = [dim.size for dim in dims]
     dim_grids = typed.List([dim.grid for dim in dims])
     dim_labels = np.vstack([data[dim.name].values for dim in dims])
@@ -196,15 +211,34 @@ def get_mat(data, dims):
         for i, dim in enumerate(dims)
     ])
 
-    row_indices, col_indices, mat_entries = get_mat_specs(
+    mat_specs = globals()[f"get_mat_specs_{method}"](
         dim_labels, dim_grids, dim_indices
     )
-    return csr_matrix((mat_entries, (row_indices, col_indices)),
-                      shape=(data.shape[0], np.prod(dim_sizes)))
+    return csr_matrix(mat_specs, shape=(data.shape[0], np.prod(dim_sizes)))
 
 
 @njit
-def get_mat_specs(dim_labels, dim_grids, dim_indices):
+def get_mat_specs_numba(dim_labels: np.ndarray,
+                        dim_grids: np.ndarray,
+                        dim_indices: np.ndarray) -> Tuple[np.ndarray,
+                                                          Tuple[np.ndarray,
+                                                                np.ndarray]]:
+    """Get matrix specification using numba
+
+    Parameters
+    ----------
+    dim_labels : np.ndarray
+        Data labels for each dimenions. Each row corresponding to one dimension.
+    dim_grids : np.ndarray
+        Grids of each dimension.
+    dim_indices : np.ndarray
+        Indicies of labels relative to the grids.
+
+    Returns
+    -------
+    Tuple[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+        Sparse matrix specification, with entries and indices.
+    """
     ndat = dim_labels.shape[1]
     ndim = len(dim_grids)
     dim_sizes = typed.List([dim_grid.size for dim_grid in dim_grids])
@@ -217,21 +251,21 @@ def get_mat_specs(dim_labels, dim_grids, dim_indices):
     col_indices = np.zeros(netr, dtype=np.int64)
     mat_entries = np.zeros(netr, dtype=np.float64)
 
+    indices = np.zeros(2*ndim, dtype=np.int64)
+    weights = np.zeros(2*ndim, dtype=np.float64)
+
     for i in range(ndat):
-        indices = np.zeros(2*ndim, dtype=np.int64)
-        weights = np.zeros(2*ndim, dtype=np.float64)
         for j in range(ndim):
             k = 2*j
             indices[k] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i] - 1))
             indices[k + 1] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i]))
             if indices[k] == indices[k + 1]:
                 weights[k] = 1.0
-                weights[k + 1] = 1.0
             else:
                 weights[k] = \
                     (dim_grids[j][indices[k + 1]] - dim_labels[j, i]) / \
                     (dim_grids[j][indices[k + 1]] - dim_grids[j][indices[k]])
-                weights[k + 1] = 1.0 - weights[k]
+            weights[k + 1] = 1.0 - weights[k]
 
         offsets = 2*np.arange(ndim)
         for j in range(index_size):
@@ -240,39 +274,58 @@ def get_mat_specs(dim_labels, dim_grids, dim_indices):
                 ravel_multi_index(indices[pos_indices], dim_sizes)
             mat_entries[i*index_size + j] = np.prod(weights[pos_indices])
 
-    return row_indices, col_indices, mat_entries
+    return mat_entries, (row_indices, col_indices)
 
 
-def get_mat_naive(data, dims):
-    var_shape = tuple(dim.size for dim in dims)
+def get_mat_specs_naive(dim_labels: np.ndarray,
+                        dim_grids: np.ndarray,
+                        dim_indices: np.ndarray) -> Tuple[np.ndarray,
+                                                          Tuple[np.ndarray,
+                                                                np.ndarray]]:
+    """Get matrix specification using numba
+
+    Parameters
+    ----------
+    dim_labels : np.ndarray
+        Data labels for each dimenions. Each row corresponding to one dimension.
+    dim_grids : np.ndarray
+        Grids of each dimension.
+    dim_indices : np.ndarray
+        Indicies of labels relative to the grids.
+
+    Returns
+    -------
+    Tuple[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+        Sparse matrix specification, with entries and indices.
+    """
+    var_shape = tuple(dim_grid.size for dim_grid in dim_grids)
     row_indices = []
     col_indices = []
-    mat_weights = []
+    mat_entries = []
 
-    for i, obs in data.iterrows():
-        dim_indices = []
-        dim_weights = []
-        for dim in dims:
-            x = obs[dim.name]
-            j = dim.grid.searchsorted(x, side="right")
-            if j == 0:
-                indices, weights = (0,), (1,)
-            elif j == dim.size:
-                indices, weights = (dim.size - 1,), (1,)
+    for i, obs in enumerate(dim_labels.T):
+        indices = []
+        weights = []
+        for j, dim_grid in enumerate(dim_grids):
+            x = obs[j]
+            k = dim_indices[j][i]
+            if k == 0:
+                index, weight = (0,), (1,)
+            elif k == dim_grid.size:
+                index, weight = (dim_grid.size - 1,), (1,)
             else:
-                p = (dim.grid[j] - x) / (dim.grid[j] - dim.grid[j - 1])
-                indices, weights = (j - 1, j), (p, 1 - p)
-            dim_indices.append(indices)
-            dim_weights.append(weights)
-        indices = product(*dim_indices)
-        weights = product(*dim_weights)
+                p = (dim_grid[k] - x) / (dim_grid[k] - dim_grid[k - 1])
+                index, weight = (k - 1, k), (p, 1 - p)
+            indices.append(index)
+            weights.append(weight)
+        indices = product(*indices)
+        weights = product(*weights)
 
         add_col_indices = list(
             map(lambda x: np.ravel_multi_index(x, var_shape), indices)
         )
         col_indices.extend(add_col_indices)
         row_indices.extend([i]*len(add_col_indices))
-        mat_weights.extend(list(map(np.prod, weights)))
+        mat_entries.extend(list(map(np.prod, weights)))
 
-    return csr_matrix((mat_weights, (row_indices, col_indices)),
-                      shape=(data.shape[0], np.prod(var_shape)))
+    return mat_entries, (row_indices, col_indices)
