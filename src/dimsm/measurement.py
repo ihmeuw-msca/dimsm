@@ -247,7 +247,7 @@ def get_mat_naive(data, dims):
     var_shape = tuple(dim.size for dim in dims)
     row_indices = []
     col_indices = []
-    mat_weights = []
+    mat_entries = []
 
     for i, obs in data.iterrows():
         dim_indices = []
@@ -272,7 +272,7 @@ def get_mat_naive(data, dims):
         )
         col_indices.extend(add_col_indices)
         row_indices.extend([i]*len(add_col_indices))
-        mat_weights.extend(list(map(np.prod, weights)))
+        mat_entries.extend(list(map(np.prod, weights)))
 
-    return csr_matrix((mat_weights, (row_indices, col_indices)),
+    return csr_matrix((mat_entries, (row_indices, col_indices)),
                       shape=(data.shape[0], np.prod(var_shape)))
