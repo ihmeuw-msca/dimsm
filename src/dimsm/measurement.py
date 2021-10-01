@@ -217,21 +217,21 @@ def get_mat_specs(dim_labels, dim_grids, dim_indices):
     col_indices = np.zeros(netr, dtype=np.int64)
     mat_entries = np.zeros(netr, dtype=np.float64)
 
+    indices = np.zeros(2*ndim, dtype=np.int64)
+    weights = np.zeros(2*ndim, dtype=np.float64)
+
     for i in range(ndat):
-        indices = np.zeros(2*ndim, dtype=np.int64)
-        weights = np.zeros(2*ndim, dtype=np.float64)
         for j in range(ndim):
             k = 2*j
             indices[k] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i] - 1))
             indices[k + 1] = min(dim_sizes[j] - 1, max(0, dim_indices[j, i]))
             if indices[k] == indices[k + 1]:
                 weights[k] = 1.0
-                weights[k + 1] = 1.0
             else:
                 weights[k] = \
                     (dim_grids[j][indices[k + 1]] - dim_labels[j, i]) / \
                     (dim_grids[j][indices[k + 1]] - dim_grids[j][indices[k]])
-                weights[k + 1] = 1.0 - weights[k]
+            weights[k + 1] = 1.0 - weights[k]
 
         offsets = 2*np.arange(ndim)
         for j in range(index_size):
