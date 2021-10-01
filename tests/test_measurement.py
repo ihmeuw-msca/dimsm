@@ -109,3 +109,13 @@ def test_hessian(measurement, dims):
     my_hessian = measurement.hessian().toarray()
     tr_hessian = ad_jacobian(measurement.gradient, x, out_shape=(x.size,))
     assert np.allclose(my_hessian, tr_hessian)
+
+
+def test_design_mat(measurement):
+    dims = [Dimension("age", measurement.data["age"].unique()),
+            Dimension("year", measurement.data["year"].unique())]
+    measurement.update_dim(dims)
+    mat1 = measurement.mat.toarray()
+    measurement.update_dim(dims, method="naive")
+    mat2 = measurement.mat.toarray()
+    assert np.allclose(mat1, mat2)
