@@ -4,7 +4,7 @@ Measurement
 
 Contains table of measurements and the (co)variance matrix.
 """
-from typing import List, Union
+from typing import List, Union, Tuple
 from operator import attrgetter
 from itertools import product
 
@@ -184,7 +184,25 @@ class Measurement:
         return f"{type(self).__name__}(size={self.size})"
 
 
-def get_mat(data, dims, method: str = "numba"):
+def get_mat(data: pd.DataFrame,
+            dims: List[Dimension],
+            method: str = "numba") -> csr_matrix:
+    """Get design matrix.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Data frame that contains the data.
+    dims : List[Dimension]
+        Dimensions settings.
+    method : str, optional
+        Method to get the design matrix, by default "numba".
+
+    Returns
+    -------
+    csr_matrix
+        Returns the design matrix.
+    """
     dim_sizes = [dim.size for dim in dims]
     dim_grids = typed.List([dim.grid for dim in dims])
     dim_labels = np.vstack([data[dim.name].values for dim in dims])
@@ -200,7 +218,27 @@ def get_mat(data, dims, method: str = "numba"):
 
 
 @njit
-def get_mat_specs_numba(dim_labels, dim_grids, dim_indices):
+def get_mat_specs_numba(dim_labels: np.ndarray,
+                        dim_grids: np.ndarray,
+                        dim_indices: np.ndarray) -> Tuple[np.ndarray,
+                                                          Tuple[np.ndarray,
+                                                                np.ndarray]]:
+    """Get matrix specification using numba
+
+    Parameters
+    ----------
+    dim_labels : np.ndarray
+        Data labels for each dimenions. Each row corresponding to one dimension.
+    dim_grids : np.ndarray
+        Grids of each dimension.
+    dim_indices : np.ndarray
+        Indicies of labels relative to the grids.
+
+    Returns
+    -------
+    Tuple[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+        Sparse matrix specification, with entries and indices.
+    """
     ndat = dim_labels.shape[1]
     ndim = len(dim_grids)
     dim_sizes = typed.List([dim_grid.size for dim_grid in dim_grids])
@@ -239,7 +277,27 @@ def get_mat_specs_numba(dim_labels, dim_grids, dim_indices):
     return mat_entries, (row_indices, col_indices)
 
 
-def get_mat_specs_naive(dim_labels, dim_grids, dim_indices):
+def get_mat_specs_naive(dim_labels: np.ndarray,
+                        dim_grids: np.ndarray,
+                        dim_indices: np.ndarray) -> Tuple[np.ndarray,
+                                                          Tuple[np.ndarray,
+                                                                np.ndarray]]:
+    """Get matrix specification using numba
+
+    Parameters
+    ----------
+    dim_labels : np.ndarray
+        Data labels for each dimenions. Each row corresponding to one dimension.
+    dim_grids : np.ndarray
+        Grids of each dimension.
+    dim_indices : np.ndarray
+        Indicies of labels relative to the grids.
+
+    Returns
+    -------
+    Tuple[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+        Sparse matrix specification, with entries and indices.
+    """
     var_shape = tuple(dim_grid.size for dim_grid in dim_grids)
     row_indices = []
     col_indices = []
