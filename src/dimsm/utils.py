@@ -37,7 +37,7 @@ def reshape_var(x: np.ndarray,
     n = np.prod(var_shape)
     k = x.size // n
     other_dim_indices = np.array([i for i in range(len(var_shape))
-                                  if i != dim_index])
+                                  if i != dim_index], dtype=int)
 
     if reverse:
         indices = np.argsort(reshape_var(
